@@ -243,21 +243,37 @@ class MeshCoreDecoder
         $formatA = ($len >= 101);
         $flagsOffset = $formatA ? 100 : 36;
         $signatureHex = null;
+        $signatureValid = null;
 
         if ($formatA && $len >= 100) {
-            $signatureHex = strtolower(bin2hex(substr($payload, 36, 64)));
+            $signatureBytes = substr($payload, 36, 64);
+            $signatureHex = strtolower(bin2hex($signatureBytes));
+            if (function_exists('sodium_crypto_sign_verify_detached')) {
+                try {
+                    // MeshCore ADVERT Ed25519 parašas skaičiuojamas nuo: pub_key (32B) + timestamp (4B) + app_data (nuo 100B iki galo)
+                    $signedData = substr($payload, 0, 36) . substr($payload, 100);
+                    $signatureValid = sodium_crypto_sign_verify_detached($signatureBytes, $signedData, $pubKey);
+                } catch (\Throwable $e) {
+                    $signatureValid = false;
+                }
+            }
         }
 
         $advertInfo = [
-            'format'      => $formatA ? 'A' : 'B',
-            'public_key'  => $pubKeyHex,
-            'timestamp'   => $timestamp,
-            'signature'   => $signatureHex,
-            'flags'       => null,
-            'node_name'   => null,
-            'location'    => null,
-            'battery'     => null,
+            'format'          => $formatA ? 'A' : 'B',
+            'public_key'      => $pubKeyHex,
+            'timestamp'       => $timestamp,
+            'signature'       => $signatureHex,
+            'signature_valid' => $signatureValid,
+            'flags'           => null,
+            'node_name'       => null,
+            'location'        => null,
+            'battery'         => null,
         ];
+
+        if ($signatureValid === false) {
+            $advertInfo['error'] = 'Neteisingas ADVERT Ed25519 kriptografinis parašas (eteryje sugadintas paketas su bitų klaidomis)';
+        }
 
         if ($len > $flagsOffset) {
             $appFlags = ord($payload[$flagsOffset]);

@@ -53,5 +53,5 @@ interface BotRepositoryInterface
      * Suranda botą, kurio GPS koordinatės yra arčiausiai nurodytų (pagal Haversine atstumą)
      * Jei botų su GPS koordinatėmis nėra, grąžina null
      */
-    public function findClosestBot(float $latitude, float $longitude, bool $onlyEnabled = false): ?array;
+    public function findClosestBot(float $latitude, float $longitude, bool $onlyEnabled = true): ?array;
 }

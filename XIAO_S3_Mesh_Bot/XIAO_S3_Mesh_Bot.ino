@@ -455,7 +455,7 @@ void requestTelemetryFromSingleRepeater(size_t repIdx) {
       Serial.printf("[Užklausa 1/3] Siunčiamas užšifruotas Login į '%s' su slaptažodžiu '%s' (Laukiama iki %.1f s)...\n",
                     rep.name.c_str(), rep.password.c_str(), loginTimeout / 1000.0f);
     } else {
-      Serial.printf("[Užklausa 1/3] Siunčiamas užšifruotas Login į '%s' su numatytuoju slaptažodžiu 'hello' (Laukiama iki %.1f s)...\n",
+      Serial.printf("[Užklausa 1/3] Siunčiamas užšifruotas Login į '%s' su tuščiu slaptažodžiu '' (Laukiama iki %.1f s)...\n",
                     rep.name.c_str(), loginTimeout / 1000.0f);
     }
     sendMeshCoreLogin(repIdx);
@@ -751,10 +751,10 @@ bool fetchRepeatersFromURL() {
     JsonObject obj = doc.as<JsonObject>();
     monitoredRepeaters[0].name         = obj["name"].as<String>();
     monitoredRepeaters[0].public_id    = obj["public_id"].as<String>();
-    monitoredRepeaters[0].password     = obj["password"].as<String>();
+    monitoredRepeaters[0].password     = (!obj.containsKey("password") || obj["password"].isNull()) ? "" : obj["password"].as<String>();
     monitoredRepeaters[0].password.trim();
-    if (monitoredRepeaters[0].password.length() == 0) {
-      monitoredRepeaters[0].password = "hello";
+    if (monitoredRepeaters[0].password.equalsIgnoreCase("null")) {
+      monitoredRepeaters[0].password = "";
     }
     monitoredRepeaters[0].isDirect     = obj["isDirect"] | false;
     monitoredRepeaters[0].skipLogin    = obj.containsKey("skip_login") ? (bool)obj["skip_login"] : (obj.containsKey("login") ? !((bool)obj["login"]) : false);
@@ -769,10 +769,10 @@ bool fetchRepeatersFromURL() {
       size_t idx = monitoredRepeatersCount;
       monitoredRepeaters[idx].name         = obj["name"].as<String>();
       monitoredRepeaters[idx].public_id    = obj["public_id"].as<String>();
-      monitoredRepeaters[idx].password     = obj["password"].as<String>();
+      monitoredRepeaters[idx].password     = (!obj.containsKey("password") || obj["password"].isNull()) ? "" : obj["password"].as<String>();
       monitoredRepeaters[idx].password.trim();
-      if (monitoredRepeaters[idx].password.length() == 0) {
-        monitoredRepeaters[idx].password = "hello";
+      if (monitoredRepeaters[idx].password.equalsIgnoreCase("null")) {
+        monitoredRepeaters[idx].password = "";
       }
       monitoredRepeaters[idx].isDirect     = obj["isDirect"] | false;
       monitoredRepeaters[idx].skipLogin    = obj.containsKey("skip_login") ? (bool)obj["skip_login"] : (obj.containsKey("login") ? !((bool)obj["login"]) : false);
@@ -1142,8 +1142,8 @@ void sendMeshCoreLogin(size_t repIdx) {
 
   String loginPwd = rep.password;
   loginPwd.trim();
-  if (loginPwd.length() == 0) {
-    loginPwd = "hello";
+  if (loginPwd.equalsIgnoreCase("null")) {
+    loginPwd = "";
   }
   size_t pwdLen = loginPwd.length();
   memcpy(&plain[plainLen], loginPwd.c_str(), pwdLen + 1);

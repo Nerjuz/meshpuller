@@ -126,6 +126,7 @@ try {
 if ($action === 'stats') {
     try {
         $repository->cleanupInvalidTelemetry();
+        $repository->cleanupInvalidSignatureNodes(false);
         $nodeStats = $repository->getNodeStats();
         $rawStats  = $repository->getStats();
         $telStats  = $repository->getTelemetryStats();
@@ -368,6 +369,37 @@ if ($action === 'update_node') {
                 'error'   => 'Mazgas nerastas arba duomenys nepasikeitė'
             ]);
         }
+    } catch (\Throwable $e) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    }
+    exit;
+}
+
+// Mazgo pašalinimas
+if ($action === 'delete_node') {
+    if ($method !== 'POST') {
+        http_response_code(405);
+        echo json_encode(['success' => false, 'error' => 'Metodas nepalaikomas']);
+        exit;
+    }
+
+    $rawInput = file_get_contents('php://input');
+    $data = json_decode($rawInput, true) ?: $_POST;
+    $publicKeyOrNodeId = trim((string)($data['public_key'] ?? $data['node_id'] ?? ''));
+
+    if (empty($publicKeyOrNodeId)) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'Nenurodytas mazgo identifikatorius (public_key arba node_id)']);
+        exit;
+    }
+
+    try {
+        $deleted = $repository->deleteNode($publicKeyOrNodeId);
+        echo json_encode([
+            'success' => $deleted,
+            'message' => $deleted ? 'Mazgas sėkmingai pašalintas!' : 'Nepavyko pašalinti mazgo'
+        ]);
     } catch (\Throwable $e) {
         http_response_code(500);
         echo json_encode(['success' => false, 'error' => $e->getMessage()]);

@@ -216,10 +216,16 @@ SQL;
             $res = $stmt->execute($params);
 
             // Jei pakeistas bot_id, atnaujiname ir mazguose
+            $effectiveBotId = !empty($params[':new_bot_id']) ? $params[':new_bot_id'] : $cleanId;
             if ($res && !empty($params[':new_bot_id'])) {
                 $nodeSql = "UPDATE nodes SET bot_id = :new_id WHERE UPPER(bot_id) = :old_id";
                 $nStmt = $this->pdo->prepare($nodeSql);
                 $nStmt->execute([':new_id' => $params[':new_bot_id'], ':old_id' => $cleanId]);
+            }
+
+            // Jei botas išjungtas (enabled = 0), perpriskiriame visus jo mazgus arčiausiems įjungtiems botams
+            if ($res && array_key_exists('enabled', $data) && empty($data['enabled'])) {
+                $this->reassignNodesFromDisabledBot($effectiveBotId);
             }
 
             return $res;
@@ -240,9 +246,61 @@ SQL;
 
         try {
             $stmt = $this->pdo->prepare("DELETE FROM bots WHERE UPPER(bot_id) = :bot_id");
-            return $stmt->execute([':bot_id' => $cleanId]);
+            $res = $stmt->execute([':bot_id' => $cleanId]);
+            if ($res) {
+                $this->reassignNodesFromDisabledBot($cleanId);
+            }
+            return $res;
         } catch (\Throwable $e) {
             return false;
+        }
+    }
+
+    /**
+     * Perpriskiria visus išjungto arba pašalinto boto mazgus arčiausiems aktyviems (enabled = 1) botams pagal GPS.
+     */
+    public function reassignNodesFromDisabledBot(string $disabledBotId): int
+    {
+        $cleanId = strtoupper(substr(trim($disabledBotId), 0, 32));
+        if ($cleanId === '') {
+            return 0;
+        }
+
+        try {
+            $allBots = $this->getAllBots();
+            $enabledBots = array_values(array_filter($allBots, static fn(array $b): bool => !empty($b['enabled']) && strtoupper(trim((string)$b['bot_id'])) !== $cleanId));
+            if (empty($enabledBots)) {
+                return 0;
+            }
+            $fallbackBotId = strtoupper(substr(trim((string)$enabledBots[0]['bot_id']), 0, 16));
+
+            $stmt = $this->pdo->prepare("SELECT id, latitude, longitude, last_path FROM nodes WHERE UPPER(bot_id) = :b_id");
+            $stmt->execute([':b_id' => $cleanId]);
+            $nodes = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+            if (empty($nodes)) {
+                return 0;
+            }
+
+            $updStmt = $this->pdo->prepare("UPDATE nodes SET bot_id = :new_bot, last_path = :new_path WHERE id = :id");
+            $reassigned = 0;
+            foreach ($nodes as $n) {
+                $lat = ($n['latitude'] !== null) ? (float)$n['latitude'] : 0.0;
+                $lon = ($n['longitude'] !== null) ? (float)$n['longitude'] : 0.0;
+                $closest = (abs($lat) > 0.0001 || abs($lon) > 0.0001)
+                    ? $this->findClosestBot($lat, $lon, true)
+                    : null;
+                $newBotId = ($closest && !empty($closest['bot_id']))
+                    ? strtoupper(substr(trim((string)$closest['bot_id']), 0, 16))
+                    : $fallbackBotId;
+                $oldPath = ($n['last_path'] !== null) ? strtoupper(trim((string)$n['last_path'])) : null;
+                $newPath = ($oldPath === 'FLOOD') ? 'FLOOD' : null;
+                if ($updStmt->execute([':new_bot' => $newBotId, ':new_path' => $newPath, ':id' => $n['id']])) {
+                    $reassigned++;
+                }
+            }
+            return $reassigned;
+        } catch (\Throwable $e) {
+            return 0;
         }
     }
 
@@ -291,7 +349,7 @@ SQL;
      * Suranda botą, kurio GPS koordinatės yra arčiausiai nurodytų (pagal Haversine atstumą).
      * Jei koordinatės (0, 0) arba botų su koordinatėmis nėra, grąžina null.
      */
-    public function findClosestBot(float $latitude, float $longitude, bool $onlyEnabled = false): ?array
+    public function findClosestBot(float $latitude, float $longitude, bool $onlyEnabled = true): ?array
     {
         if (abs($latitude) < 0.0001 && abs($longitude) < 0.0001) {
             return null;

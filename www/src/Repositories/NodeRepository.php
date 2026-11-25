@@ -57,11 +57,23 @@ class NodeRepository implements NodeRepositoryInterface
     public function upsertNodeFromAdvert(array $advert, ?array $packetMeta = null): bool
     {
         $pubKey = strtolower(trim($advert['public_key'] ?? ''));
-        if (empty($pubKey)) {
+        if (empty($pubKey) || strlen($pubKey) !== 64 || !ctype_xdigit($pubKey)) {
+            return false;
+        }
+
+        // Atmetame eteryje sugadintus ADVERT paketus (su bitų klaidomis), kurių Ed25519 parašas neteisingas
+        if (!empty($advert['error']) || (isset($advert['signature_valid']) && $advert['signature_valid'] === false)) {
+            return false;
+        }
+        if (!isset($advert['signature_valid']) && !$this->verifyAdvertArraySignature($advert)) {
             return false;
         }
 
         $nodeName = $advert['node_name'] ?? null;
+        if ($nodeName !== null && (preg_match('/[\x00-\x1F\x7F]/', (string)$nodeName) || strpos((string)$nodeName, "\xEF\xBF\xBD") !== false)) {
+            // Papildoma apsauga nuo sugadintų pavadinimų su valdymo simboliais arba UTF-8 replacement simboliu
+            return false;
+        }
         $nodeId = substr($pubKey, 0, 4);
         $format = $advert['format'] ?? null;
         $timestamp = isset($advert['timestamp']) ? (int)$advert['timestamp'] : null;
@@ -99,14 +111,14 @@ class NodeRepository implements NodeRepositoryInterface
                 : 'KLP');
 
         // Ištraukiame atvirkštinį maršrutą (Reverse Path) ir šuolių skaičių iš ADVERT paketo
-        $routeInfo = $this->extractReturnPathFromMeta($packetMeta, $rssi, $snr);
+        $routeInfo = $this->extractReturnPathFromMeta($packetMeta, $rssi, $snr, $nodeId);
         $candidatePath = $routeInfo['path'];
         $candidateHops = $routeInfo['hops'];
 
         // Nuskaitome esamą mazgo būseną (jei jau egzistuoja DB), kad palygintume kelio ilgį ir apsaugotume nuo aidų
         $existingNode = $this->findExistingNodeState($pubKey);
 
-        // Boto ir maršruto parinkimas pagal trumpiausią kelią (hops), apkrovos balansavimą ir GPS atsarginį variantą
+        // Boto parinkimas pagal artimiausią GPS lokaciją ir maršruto išsaugojimas priskirtam botui
         $resolved = $this->resolveOptimalBotAndPath(
             $existingNode,
             $heardBotId,
@@ -122,6 +134,10 @@ class NodeRepository implements NodeRepositoryInterface
         $botId = $resolved['bot_id'];
         $resolvedPath = $resolved['last_path'];
         $resetFails = !empty($resolved['reset_fails']);
+
+        // Radijo rodiklius (RSSI / SNR) atnaujiname tik tada, kai paketą išgirdo pats priskirtas botas (arba jei mazgas naujas)
+        $effectiveRssi = ($heardBotId === $botId || $existingNode === null) ? $rssi : null;
+        $effectiveSnr  = ($heardBotId === $botId || $existingNode === null) ? $snr  : null;
 
         $flagsJson = !empty($flags) ? json_encode($flags, JSON_UNESCAPED_UNICODE) : null;
         $rawAdvertJson = json_encode($advert, JSON_UNESCAPED_UNICODE);
@@ -147,7 +163,6 @@ class NodeRepository implements NodeRepositoryInterface
             ON CONFLICT (public_key) DO UPDATE SET
                 node_name = COALESCE(EXCLUDED.node_name, nodes.node_name),
                 node_id = COALESCE(EXCLUDED.node_id, nodes.node_id),
-                password = COALESCE(NULLIF(nodes.password, ''), EXCLUDED.password),
                 advert_format = COALESCE(EXCLUDED.advert_format, nodes.advert_format),
                 advert_timestamp = COALESCE(EXCLUDED.advert_timestamp, nodes.advert_timestamp),
                 signature = COALESCE(EXCLUDED.signature, nodes.signature),
@@ -196,7 +211,6 @@ SQL;
             ON DUPLICATE KEY UPDATE
                 `node_name` = COALESCE(VALUES(`node_name`), `node_name`),
                 `node_id` = COALESCE(VALUES(`node_id`), `node_id`),
-                `password` = COALESCE(NULLIF(`password`, ''), VALUES(`password`)),
                 `advert_format` = COALESCE(VALUES(`advert_format`), `advert_format`),
                 `advert_timestamp` = COALESCE(VALUES(`advert_timestamp`), `advert_timestamp`),
                 `signature` = COALESCE(VALUES(`signature`), `signature`),
@@ -248,8 +262,8 @@ SQL;
         $stmt->bindValue(':longitude', $lon);
         $stmt->bindValue(':battery_mv', $batteryMv);
         $stmt->bindValue(':battery_v', $batteryV);
-        $stmt->bindValue(':last_rssi', $rssi);
-        $stmt->bindValue(':last_snr', $snr);
+        $stmt->bindValue(':last_rssi', $effectiveRssi);
+        $stmt->bindValue(':last_snr', $effectiveSnr);
         $stmt->bindValue(':flags_json', $flagsJson);
         $stmt->bindValue(':raw_advert_json', $rawAdvertJson);
         $stmt->bindValue(':bot_id', $botId);
@@ -311,7 +325,18 @@ SQL;
         }
         $driver = $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
 
+        // Pašaliname paties mazgo 4 simbolių ID iš returnPath galo (jei ten pateko), kad kartotuvas nepersiųstų paketo sau
+        if ($cleanReturnPath !== null && $cleanReturnPath !== 'DIRECT' && $cleanReturnPath !== 'FLOOD') {
+            $selfPrefix = strtoupper(substr($existingNode['node_id'] ?? ($existingNode['public_key'] ?? $id), 0, 4));
+            if (strlen($selfPrefix) === 4 && strlen($cleanReturnPath) >= 4 && (strlen($cleanReturnPath) % 4 === 0)) {
+                $hopsArr = str_split($cleanReturnPath, 4);
+                $filteredHops = array_values(array_filter($hopsArr, fn($h) => $h !== $selfPrefix));
+                $cleanReturnPath = !empty($filteredHops) ? implode('', $filteredHops) : null;
+            }
+        }
+
         // Jei turime maršrutą arba tai yra telemetrijos atsakymas – vertiname optimalų botą ir kelią
+        $assignedBotForRssi = $existingNode['bot_id'] ?? $heardBotId;
         if ($existingNode !== null && ($cleanReturnPath !== null || $hasTelemetry)) {
             $candidateHops = ($cleanReturnPath !== null) ? $this->getPathHopCount($cleanReturnPath) : null;
             $lat = isset($existingNode['latitude']) && $existingNode['latitude'] !== null ? (float)$existingNode['latitude'] : null;
@@ -328,6 +353,7 @@ SQL;
                 $lon,
                 $hasTelemetry
             );
+            $assignedBotForRssi = $resolved['bot_id'] ?? $assignedBotForRssi;
 
             if (!empty($resolved['bot_id'])) {
                 if ($driver === 'pgsql') {
@@ -381,12 +407,14 @@ SQL;
             $params[':temp_c'] = $temperatureC;
         }
 
-        if ($rssi !== null) {
+        $isFromAssignedBot = ($heardBotId === null || $assignedBotForRssi === null || strtoupper((string)$heardBotId) === strtoupper((string)$assignedBotForRssi));
+
+        if ($rssi !== null && ($isFromAssignedBot || $hasTelemetry)) {
             $sets[] = 'last_rssi = :rssi';
             $params[':rssi'] = $rssi;
         }
 
-        if ($snr !== null) {
+        if ($snr !== null && ($isFromAssignedBot || $hasTelemetry)) {
             $sets[] = 'last_snr = :snr';
             $params[':snr'] = $snr;
         }
@@ -544,8 +572,7 @@ SQL;
         if (array_key_exists('password', $fields)) {
             $colPass = ($driver === 'pgsql') ? 'password' : '`password`';
             $sets[] = "{$colPass} = :password";
-            $trimmedPass = $fields['password'] !== null ? trim((string)$fields['password']) : '';
-            $params[':password'] = ($trimmedPass !== '') ? $trimmedPass : 'hello';
+            $params[':password'] = $fields['password'] !== null ? trim((string)$fields['password']) : null;
         }
 
         if (array_key_exists('update', $fields)) {
@@ -777,11 +804,14 @@ SQL;
      *
      * @return array{path: ?string, hops: ?int}
      */
-    private function extractReturnPathFromMeta(?array $packetMeta, ?float $rssi, ?float $snr): array
+    private function extractReturnPathFromMeta(?array $packetMeta, ?float $rssi, ?float $snr, ?string $targetNodeId = null): array
     {
         if (empty($packetMeta)) {
             return ['path' => null, 'hops' => null];
         }
+        $cleanTargetId = ($targetNodeId !== null && strlen(trim($targetNodeId)) >= 4)
+            ? strtoupper(substr(trim($targetNodeId), 0, 4))
+            : null;
 
         $dec = null;
         if (!empty($packetMeta['decoded_json'])) {
@@ -837,13 +867,14 @@ SQL;
         // Jei kelias paimtas iš FLOOD išorinės antraštės – apverčiame (Reverse Path).
         // Jei kelias paimtas iš PAYLOAD_TYPE_PATH vidinio 'returned_path' – jis jau yra Botas->Kartotuvas tvarka!
         if ($hopCount > 0 && !empty($incomingHops)) {
-            if ($hopCount === 1 && $rssi !== null && $rssi < -108.0) {
-                return ['path' => null, 'hops' => null];
-            }
-            // Jei net paskutinis vietinis šuolis į botą yra ties triukšmo riba (< -118 dBm arba SNR < -7.5 dB,
-            // pvz. tolimas 4 šuolių aidas į kitą miestą su -125 dBm), tokio kelio nelaikome tinkamu:
-            if ($hopCount > 1 && (($rssi !== null && $rssi < -118.0) || ($snr !== null && $snr < -7.5))) {
-                return ['path' => null, 'hops' => null];
+            if (!$isAlreadyForward) {
+                // Pasyvaus FLOOD paketo (pvz. ADVERT) išorinė antraštė:
+                // RSSI ir SNR čia rodo paskutinio retransliavusio kartotuvo (kuris taps pirmuoju šuoliu iš boto!) signalą.
+                // Jei šis kartotuvas girdimas silpniau nei -105 dBm arba SNR < -5.0 dB (pvz. aukštas 1DCA bokštas su -111 dBm į VLN),
+                // ryšys yra asimetrinis (boto TX tiesiogiai jo nepasieks), todėl tokio atbulinio kelio iš ADVERT neišsaugome!
+                if (($rssi !== null && $rssi < -105.0) || ($snr !== null && $snr < -5.0)) {
+                    return ['path' => null, 'hops' => null];
+                }
             }
             $orderedHops = $isAlreadyForward ? $incomingHops : array_reverse($incomingHops);
             $cleanHops = [];
@@ -860,6 +891,10 @@ SQL;
                 }
                 if (strlen($hex) !== 4) {
                     return ['path' => null, 'hops' => null];
+                }
+                // Niekada neįtraukiame paties tikslinio mazgo į tarpinių šuolių sąrašą!
+                if ($cleanTargetId !== null && $hex === $cleanTargetId) {
+                    continue;
                 }
                 $cleanHops[] = $hex;
             }
@@ -965,7 +1000,12 @@ SQL;
                        last_rssi, last_snr, latitude, longitude
                 FROM nodes
                 WHERE (LOWER(public_key) = :id1 OR LOWER(node_id) = :id2) {$repCond}
-                ORDER BY (LOWER(public_key) = :id_exact) DESC, is_repeater DESC, id ASC
+                ORDER BY (LOWER(public_key) = :id_exact) DESC,
+                         is_repeater DESC,
+                         (COALESCE(is_disabled, 0) = 0) DESC,
+                         requested_date DESC,
+                         last_seen_at DESC,
+                         id ASC
                 LIMIT 1
             ");
             $stmt->execute([':id1' => $clean, ':id2' => $clean, ':id_exact' => $clean]);
@@ -999,6 +1039,29 @@ SQL;
     }
 
     /**
+     * Grąžina pirmo aktyvaus (enabled = 1) boto ID kaip atsarginį variantą (kai mazgas neturi GPS koordinačių).
+     */
+    private function findFirstEnabledBotId(): string
+    {
+        try {
+            if ($this->botRepo !== null) {
+                foreach ($this->botRepo->getAllBots() as $b) {
+                    if (!empty($b['enabled']) && !empty($b['bot_id'])) {
+                        return strtoupper(substr(trim((string)$b['bot_id']), 0, 16));
+                    }
+                }
+            }
+            $stmt = $this->pdo->query("SELECT bot_id, enabled FROM bots ORDER BY id ASC");
+            while ($r = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                if (!empty($r['enabled']) && !empty($r['bot_id'])) {
+                    return strtoupper(substr(trim((string)$r['bot_id']), 0, 16));
+                }
+            }
+        } catch (\Throwable $e) {}
+        return 'KLP';
+    }
+
+    /**
      * Grąžina kiekvieno boto aktyvių stebimų kartotuvų skaičių krūvio balansavimui.
      *
      * @return array<string, int>
@@ -1027,8 +1090,8 @@ SQL;
     }
 
     /**
-     * Išmanus boto ir kelio (last_path) parinkimas pagal trumpiausią kelią (hops),
-     * apsaugą nuo to paties paketo aidų bei apkrovos balansavimą tarp gretimų botų.
+     * Boto parinkimas pagal ARČIAUSIĄ GEOGRAFINĘ LOKACIJĄ (GPS Haversine atstumą iki artimiausio įjungto boto),
+     * kaip buvo anksčiau, o maršrutas (last_path) atnaujinamas tik iš priskirto boto girdimų paketų.
      *
      * @return array{bot_id: string, last_path: ?string, reset_fails: bool}
      */
@@ -1049,33 +1112,33 @@ SQL;
         }
         $heardBotEnabled = $this->isBotEnabledInDb($heardBotId);
 
+        // Nustatome geriausias žinomas mazgo koordinates (iš naujo ADVERT arba iš DB)
+        $effLat = ($lat !== null && abs($lat) > 0.0001)
+            ? $lat
+            : (isset($existingNode['latitude']) && $existingNode['latitude'] !== null ? (float)$existingNode['latitude'] : null);
+        $effLon = ($lon !== null && abs($lon) > 0.0001)
+            ? $lon
+            : (isset($existingNode['longitude']) && $existingNode['longitude'] !== null ? (float)$existingNode['longitude'] : null);
+        $hasValidCoords = ($effLat !== null && $effLon !== null && (abs($effLat) > 0.0001 || abs($effLon) > 0.0001));
+
+        // Surandame artimiausią aktyvų (enabled = 1) botą pagal GPS koordinates
+        $closestBotId = null;
+        if ($hasValidCoords) {
+            $closest = ($this->botRepo !== null)
+                ? $this->botRepo->findClosestBot($effLat, $effLon, true)
+                : $this->findClosestBotViaPdo($effLat, $effLon, true);
+            if ($closest && !empty($closest['bot_id'])) {
+                $closestBotId = strtoupper(substr(trim((string)$closest['bot_id']), 0, 16));
+            }
+        }
+
         // 1. NAUJAS MAZGAS (dar nėra 'nodes' lentelėje):
-        // Priskiriame botui, kuris faktiškai išgirdo paketą (jei botas įjungtas), ir išsaugome kelią.
         if ($existingNode === null) {
-            if ($heardBotEnabled && $candidatePath !== null) {
-                return [
-                    'bot_id'      => $heardBotId,
-                    'last_path'   => $candidatePath,
-                    'reset_fails' => false,
-                ];
-            }
-
-            if (!$heardBotEnabled && $lat !== null && $lon !== null && (abs($lat) > 0.0001 || abs($lon) > 0.0001)) {
-                $closest = ($this->botRepo !== null)
-                    ? $this->botRepo->findClosestBot($lat, $lon, true)
-                    : $this->findClosestBotViaPdo($lat, $lon);
-                if ($closest && !empty($closest['bot_id'])) {
-                    return [
-                        'bot_id'      => strtoupper(substr(trim((string)$closest['bot_id']), 0, 16)),
-                        'last_path'   => null,
-                        'reset_fails' => false,
-                    ];
-                }
-            }
-
+            $targetBotId = $closestBotId ?? ($heardBotEnabled ? $heardBotId : $this->findFirstEnabledBotId());
+            $initialPath = ($heardBotId === $targetBotId) ? $candidatePath : null;
             return [
-                'bot_id'      => $heardBotId,
-                'last_path'   => $candidatePath,
+                'bot_id'      => $targetBotId,
+                'last_path'   => $initialPath,
                 'reset_fails' => false,
             ];
         }
@@ -1083,142 +1146,98 @@ SQL;
         // 2. ESAMAS MAZGAS:
         $existingBotId = !empty($existingNode['bot_id'])
             ? strtoupper(substr(trim((string)$existingNode['bot_id']), 0, 16))
-            : 'KLP';
+            : $this->findFirstEnabledBotId();
+        $existingBotEnabled = $this->isBotEnabledInDb($existingBotId);
         $isLocked = !empty($existingNode['is_bot_locked']);
         $existingPath = ($existingNode['last_path'] !== null && trim((string)$existingNode['last_path']) !== '')
             ? strtoupper(trim((string)$existingNode['last_path']))
             : null;
         $isForceFlood = ($existingPath === 'FLOOD');
+        $existingFailCount = (int)($existingNode['telemetry_fail_count'] ?? 0);
+
+        // Nustatome, kuriam botui mazgas turi priklausyti pagal GPS lokaciją.
+        // Išjungtam botui (enabled = 0) mazgas NIEKADA nepriskiriamas ir nelieka priskirtas!
+        if ($isLocked && $existingBotEnabled) {
+            $targetBotId = $existingBotId;
+        } elseif ($closestBotId !== null) {
+            $targetBotId = $closestBotId;
+        } elseif ($existingBotEnabled) {
+            $targetBotId = $existingBotId;
+        } elseif ($heardBotEnabled) {
+            $targetBotId = $heardBotId;
+        } else {
+            $targetBotId = $this->findFirstEnabledBotId();
+        }
+
+        // Jei mazgas buvo priskirtas kitam botui, o pagal lokaciją priklauso $targetBotId – perjungiame į artimiausią botą!
+        $botChanged = ($targetBotId !== $existingBotId);
+        if ($botChanged) {
+            $newPath = $isForceFlood ? 'FLOOD' : (($heardBotId === $targetBotId) ? $candidatePath : null);
+            return [
+                'bot_id'      => $targetBotId,
+                'last_path'   => $newPath,
+                'reset_fails' => ($existingFailCount > 0),
+            ];
+        }
+
+        // Jei paketą išgirdo KITAS botas (ne tas, kuriam mazgas priskirtas pagal lokaciją) –
+        // nekeičiame nei priskirto boto, nei jo maršruto!
+        if ($heardBotId !== $targetBotId) {
+            return [
+                'bot_id'      => $targetBotId,
+                'last_path'   => $isForceFlood ? 'FLOOD' : $existingPath,
+                'reset_fails' => false,
+            ];
+        }
+
+        // Paketą išgirdo TAS PATS (pagal lokaciją priskirtas) botas ($heardBotId === $targetBotId):
+        if ($isForceFlood) {
+            return [
+                'bot_id'      => $targetBotId,
+                'last_path'   => 'FLOOD',
+                'reset_fails' => false,
+            ];
+        }
 
         $oldHops = $this->getPathHopCount($existingPath);
         $newHops = ($candidatePath !== null)
             ? ($candidateHops ?? $this->getPathHopCount($candidatePath))
             : 999;
 
-        $existingFailCount = (int)($existingNode['telemetry_fail_count'] ?? 0);
         $existingSnr = ($existingNode['last_snr'] !== null) ? (float)$existingNode['last_snr'] : null;
-
         $now = time();
         $lastSeenTs = !empty($existingNode['last_seen_at']) ? strtotime((string)$existingNode['last_seen_at']) : 0;
         $telemUpdatedTs = !empty($existingNode['telemetry_updated_at']) ? strtotime((string)$existingNode['telemetry_updated_at']) : 0;
         $secSinceSeen = ($lastSeenTs > 0) ? max(0, $now - $lastSeenTs) : 999999;
         $secSinceTelem = ($telemUpdatedTs > 0) ? max(0, $now - $telemUpdatedTs) : 999999;
 
-        // 2A. Paketas gautas per TĄ PATĮ botą, kuriam mazgas jau priskirtas:
-        if ($heardBotId === $existingBotId) {
-            if ($isForceFlood) {
-                return [
-                    'bot_id'      => $existingBotId,
-                    'last_path'   => 'FLOOD',
-                    'reset_fails' => false,
-                ];
-            }
-
-            $chosenPath = $existingPath;
-            if ($candidatePath !== null) {
-                $hasProvenWorkingPath = ($existingPath !== null && $existingFailCount === 0 && $telemUpdatedTs > 0 && $secSinceTelem < 86400);
-                if (!$isTelemetryResponse && $hasProvenWorkingPath) {
-                    // Jei jau turime išbandytą ir veikiantį telemetrijos kelią (0 klaidų per 24 val.),
-                    // neleidžiame nepatikrintam ADVERT atgaliniam keliui (pvz., asimetriniam B9DD4BBD) jo perrašyti!
+        $chosenPath = $existingPath;
+        if ($candidatePath !== null) {
+            $hasProvenWorkingPath = ($existingPath !== null && $existingFailCount === 0 && $telemUpdatedTs > 0 && $secSinceTelem < 86400);
+            if (!$isTelemetryResponse && $hasProvenWorkingPath) {
+                $chosenPath = $existingPath;
+            } elseif ($newHops <= $oldHops) {
+                if ($newHops === $oldHops && $existingPath !== null && $secSinceSeen < 30 && $snr !== null && $existingSnr !== null && $snr < $existingSnr) {
                     $chosenPath = $existingPath;
-                } elseif ($newHops <= $oldHops) {
-                    // Trumpesnis arba tokio pat ilgio kelias – atnaujiname!
-                    // Jei kelias tokio pat ilgio ir gautas per tą pačią bangą (< 30s), pasiliekame geresnį SNR
-                    if ($newHops === $oldHops && $existingPath !== null && $secSinceSeen < 30 && $snr !== null && $existingSnr !== null && $snr < $existingSnr) {
-                        $chosenPath = $existingPath;
-                    } else {
+                } else {
+                    $chosenPath = $candidatePath;
+                }
+            } else {
+                if ($isTelemetryResponse) {
+                    if ($secSinceTelem >= 45) {
                         $chosenPath = $candidatePath;
                     }
                 } else {
-                    // Naujas kelias ILGESNIS už turimą ($newHops > $oldHops):
-                    // Saugomės, kad vėluojantis kelių šuolių aidas neperrašytų ką tik gauto trumpesnio kelio!
-                    if ($isTelemetryResponse) {
-                        // Jei tai naujas apklausos ciklas (>= 45s nuo paskutinės telemetrijos),
-                        // vadinasi trumpesnis kelias neatsakė ir atsakymas grįžo šiuo nauju keliu – išsaugome jį.
-                        if ($secSinceTelem >= 45) {
-                            $chosenPath = $candidatePath;
-                        }
-                    } else {
-                        // ADVERT paketas: priimame ilgesnį kelią tik jei senasis kelias turi klaidų arba paseno (> 30 min.)
-                        if ($existingFailCount > 0 || $secSinceSeen > 1800) {
-                            $chosenPath = $candidatePath;
-                        }
+                    if ($existingFailCount > 0 || $secSinceSeen > 1800) {
+                        $chosenPath = $candidatePath;
                     }
                 }
             }
-
-            return [
-                'bot_id'      => $existingBotId,
-                'last_path'   => $chosenPath,
-                'reset_fails' => false,
-            ];
-        }
-
-        // 2B. Paketas gautas per KITĄ botą ($heardBotId !== $existingBotId):
-        // Jei priskyrimas užrakintas arba naujasis botas išjungtas – boto ir esamo boto kelio nekeičiame
-        if ($isLocked || !$heardBotEnabled) {
-            return [
-                'bot_id'      => $existingBotId,
-                'last_path'   => $isForceFlood ? 'FLOOD' : $existingPath,
-                'reset_fails' => false,
-            ];
-        }
-
-        $existingBotEnabled = $this->isBotEnabledInDb($existingBotId);
-        $shouldSwitchBot = false;
-
-        if (!$existingBotEnabled) {
-            // Senasis botas išjungtas admine -> perima aktyvus botas
-            $shouldSwitchBot = true;
-        } elseif ($isTelemetryResponse) {
-            // Šis botas ką tik sėkmingai gavo šifruotą telemetrijos atsakymą iš kartotuvo!
-            $shouldSwitchBot = true;
-        } elseif ($newHops < $oldHops) {
-            // Šis botas turi GRIEŽTAI TRUMPESNĮ kelią (pvz., 0-2 šuoliai vietoj 3-4 šuolių arba FLOOD)
-            $shouldSwitchBot = true;
-        } elseif ($existingFailCount >= 1 && $newHops < 999 && ($newHops <= $oldHops || $secSinceSeen > 120)) {
-            // Senasis botas nesėkmingai bando pasiekti kartotuvą:
-            // Kitas botas perima tik jei jo kelias nėra ilgesnis už ką tik toje pačioje ADVERT bangoje girdėtą kelią,
-            // arba jei senasis botas šios ADVERT bangos išvis negirdėjo ($secSinceSeen > 120s).
-            if ($newHops === $oldHops && $secSinceSeen < 60 && $snr !== null && $existingSnr !== null && $snr < $existingSnr) {
-                $shouldSwitchBot = false;
-            } else {
-                $shouldSwitchBot = true;
-            }
-        } elseif ($newHops === $oldHops && $newHops < 999) {
-            // Abu botai turi VIENODO ILGIO kelią (pvz., abu girdi per 0 šuolių arba abu per 1-3 šuolius):
-            // Jei tai ta pati ADVERT banga (< 60s), ir šis botas girdi ženkliai stipresnį signalą (+4 dB SNR) – perima:
-            if ($snr !== null && $existingSnr !== null && ($snr - $existingSnr) >= 4.0) {
-                $shouldSwitchBot = true;
-            } else {
-                // Paskirstome krūvį tolygiai tarp gretimų botų (tik jei naujo boto SNR nėra prastesnis > 3 dB):
-                $counts = $this->getBotActiveRepeaterCounts();
-                $existingLoad = $counts[$existingBotId] ?? 0;
-                $heardLoad = $counts[$heardBotId] ?? 0;
-
-                $snrAcceptable = ($snr === null || $existingSnr === null || ($existingSnr - $snr) <= 3.0);
-                if (($existingLoad - $heardLoad) >= 2 && $snrAcceptable) {
-                    $shouldSwitchBot = true;
-                } elseif ($existingLoad >= $heardLoad && $snr !== null && $existingSnr !== null && ($snr - $existingSnr) >= 3.0 && $secSinceSeen > 30) {
-                    $shouldSwitchBot = true;
-                }
-            }
-        } elseif ($newHops > $oldHops && $newHops < 999 && $secSinceSeen > 7200) {
-            // Senasis botas mazgo negirdėjo jau > 2 val., o naujasis botas jį girdi
-            $shouldSwitchBot = true;
-        }
-
-        if ($shouldSwitchBot) {
-            return [
-                'bot_id'      => $heardBotId,
-                'last_path'   => $isForceFlood ? 'FLOOD' : $candidatePath,
-                'reset_fails' => ($existingFailCount > 0),
-            ];
         }
 
         return [
-            'bot_id'      => $existingBotId,
-            'last_path'   => $isForceFlood ? 'FLOOD' : $existingPath,
+            'bot_id'      => $targetBotId,
+            'last_path'   => $chosenPath,
             'reset_fails' => false,
         ];
     }
@@ -1226,7 +1245,7 @@ SQL;
     /**
      * Suranda arčiausiai esantį botą tiesiogiai per PDO užklausą (jei botRepo nebuvo perduotas)
      */
-    private function findClosestBotViaPdo(float $latitude, float $longitude): ?array
+    private function findClosestBotViaPdo(float $latitude, float $longitude, bool $onlyEnabled = true): ?array
     {
         try {
             $stmt = $this->pdo->query("SELECT bot_id, name, latitude, longitude, enabled FROM bots WHERE latitude IS NOT NULL AND longitude IS NOT NULL");
@@ -1234,6 +1253,9 @@ SQL;
             $closest = null;
             $minDist = PHP_FLOAT_MAX;
             foreach ($bots as $b) {
+                if ($onlyEnabled && empty($b['enabled'])) {
+                    continue;
+                }
                 $bLat = (float)$b['latitude'];
                 $bLon = (float)$b['longitude'];
                 if (abs($bLat) < 0.0001 && abs($bLon) < 0.0001) continue;
@@ -1253,6 +1275,141 @@ SQL;
             return $closest;
         } catch (\Throwable $e) {
             return null;
+        }
+    }
+
+    /**
+     * Patikrina išskaidyto ADVERT masyvo (pvz. iš raw_advert_json) Ed25519 kriptografinį parašą.
+     */
+    public function verifyAdvertArraySignature(array $advert): bool
+    {
+        if (!function_exists('sodium_crypto_sign_verify_detached')) {
+            return true;
+        }
+        $format = strtoupper((string)($advert['format'] ?? 'A'));
+        if ($format !== 'A') {
+            return true;
+        }
+        $pkHex = strtolower(trim((string)($advert['public_key'] ?? '')));
+        $sigHex = strtolower(trim((string)($advert['signature'] ?? '')));
+        $ts = $advert['timestamp'] ?? null;
+        $flags = $advert['flags'] ?? null;
+        if (strlen($pkHex) !== 64 || !ctype_xdigit($pkHex) || strlen($sigHex) !== 128 || !ctype_xdigit($sigHex) || $ts === null || !is_array($flags)) {
+            return false;
+        }
+
+        try {
+            $pk = hex2bin($pkHex);
+            $sig = hex2bin($sigHex);
+            if ($pk === false || $sig === false) {
+                return false;
+            }
+            $flagByte = isset($flags['raw']) ? (int)hexdec(str_replace('0x', '', (string)$flags['raw'])) : 0;
+            $hasLoc = !empty($flags['hasLocation']);
+            $hasFeat1 = !empty($flags['hasFeat1']);
+            $hasName = !empty($flags['hasName']);
+
+            $loc = $advert['location'] ?? null;
+            $baseLat = ($hasLoc && is_array($loc) && isset($loc['latitude'])) ? (int)round((float)$loc['latitude'] * 1000000) : 0;
+            $baseLon = ($hasLoc && is_array($loc) && isset($loc['longitude'])) ? (int)round((float)$loc['longitude'] * 1000000) : 0;
+            $latOpts = $hasLoc ? [$baseLat, $baseLat - 1, $baseLat + 1] : [0];
+            $lonOpts = $hasLoc ? [$baseLon, $baseLon - 1, $baseLon + 1] : [0];
+
+            $tsBytes = pack('V', (int)$ts);
+            $feat1Bytes = '';
+            if ($hasFeat1) {
+                $mv = isset($advert['battery']['voltage_mv']) ? (int)$advert['battery']['voltage_mv'] : 0;
+                $feat1Bytes = pack('v', $mv);
+            }
+            $nameBytes = ($hasName && isset($advert['node_name'])) ? (string)$advert['node_name'] : '';
+
+            foreach ($latOpts as $la) {
+                foreach ($lonOpts as $lo) {
+                    $app = chr($flagByte);
+                    if ($hasLoc) {
+                        $app .= pack('l', $la) . pack('l', $lo);
+                    }
+                    if ($hasFeat1) {
+                        $app .= $feat1Bytes;
+                    }
+                    if ($hasName) {
+                        $app .= $nameBytes;
+                    }
+                    $msg = $pk . $tsBytes . $app;
+                    if (sodium_crypto_sign_verify_detached($sig, $msg, $pk)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    /**
+     * Vienkartinis (arba tik rankiniu būdu iškviečiamas) sugadintų įrašų išvalymas iš 'nodes' lentelės.
+     * Vykdomas tik vieną kartą (pažymint žymą temp kataloge) arba kai paprašoma tiesiogiai,
+     * todėl įprastų užklausų metu nedaro jokio papildomo darbo.
+     */
+    public function cleanupInvalidSignatureNodes(bool $force = false): int
+    {
+        $stampFile = sys_get_temp_dir() . '/meshcore_nodes_sig_cleanup_v1.done';
+        if (!$force && is_file($stampFile)) {
+            return 0;
+        }
+        @file_put_contents($stampFile, (string)time());
+
+        $deletedCount = 0;
+        try {
+            // 1. Iškart vienu SQL sakiniu pašaliname jau pažymėtus '[SUGADINTAS PAKETAS]%' įrašus
+            $delMarked = $this->pdo->exec("DELETE FROM nodes WHERE node_name LIKE '[SUGADINTAS PAKETAS]%'");
+            if ($delMarked !== false) {
+                $deletedCount += (int)$delMarked;
+            }
+
+            // 2. Jei yra sodium, patikriname likusius įrašus
+            if (function_exists('sodium_crypto_sign_verify_detached')) {
+                $stmt = $this->pdo->query("SELECT id, raw_advert_json FROM nodes WHERE raw_advert_json IS NOT NULL");
+                $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+                $idsToDelete = [];
+                foreach ($rows as $r) {
+                    $adv = is_string($r['raw_advert_json']) ? json_decode($r['raw_advert_json'], true) : $r['raw_advert_json'];
+                    if (is_array($adv) && !$this->verifyAdvertArraySignature($adv)) {
+                        $idsToDelete[] = (int)$r['id'];
+                    }
+                }
+                if (!empty($idsToDelete)) {
+                    $placeholders = implode(',', array_fill(0, count($idsToDelete), '?'));
+                    $delStmt = $this->pdo->prepare("DELETE FROM nodes WHERE id IN ({$placeholders})");
+                    $delStmt->execute($idsToDelete);
+                    $deletedCount += $delStmt->rowCount();
+                }
+            }
+            return $deletedCount;
+        } catch (\Throwable $e) {
+            return $deletedCount;
+        }
+    }
+
+    /**
+     * Pašalina mazgą pagal public_key arba node_id.
+     */
+    public function deleteNode(string $publicKeyOrNodeId): bool
+    {
+        $cleanId = trim($publicKeyOrNodeId);
+        if ($cleanId === '') {
+            return false;
+        }
+        try {
+            if (strlen($cleanId) > 16) {
+                $stmt = $this->pdo->prepare("DELETE FROM nodes WHERE LOWER(public_key) = LOWER(:id)");
+                return $stmt->execute([':id' => $cleanId]);
+            }
+            $stmt = $this->pdo->prepare("DELETE FROM nodes WHERE LOWER(public_key) = LOWER(:id1) OR LOWER(node_id) = LOWER(:id2)");
+            return $stmt->execute([':id1' => $cleanId, ':id2' => $cleanId]);
+        } catch (\Throwable $e) {
+            return false;
         }
     }
 }

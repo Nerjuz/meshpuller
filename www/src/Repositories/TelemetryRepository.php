@@ -170,7 +170,11 @@ class TelemetryRepository implements TelemetryRepositoryInterface
                         FROM nodes
                         WHERE (is_repeater = 1 OR is_repeater = true)
                           AND (LOWER(node_id) = :nid OR LOWER(public_key) LIKE :pref)
-                        ORDER BY (LOWER(node_id) = :nid_exact) DESC, id ASC
+                        ORDER BY (LOWER(node_id) = :nid_exact) DESC,
+                                 (COALESCE(is_disabled, 0) = 0) DESC,
+                                 requested_date DESC,
+                                 last_seen_at DESC,
+                                 id ASC
                         LIMIT 1
                     ");
                     $nStmt->execute([

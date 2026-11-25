@@ -322,6 +322,16 @@ class RawPacketRepository implements
         return $this->nodeRepo->getFilteredNodes($filters, $limit, $offset, $sortBy, $sortDir);
     }
 
+    public function deleteNode(string $publicKeyOrNodeId): bool
+    {
+        return $this->nodeRepo->deleteNode($publicKeyOrNodeId);
+    }
+
+    public function cleanupInvalidSignatureNodes(bool $force = false): int
+    {
+        return $this->nodeRepo->cleanupInvalidSignatureNodes($force);
+    }
+
     // =========================================================================
     // 🔋 TELEMETRY REPOSITORY INTERFACE
     // =========================================================================
@@ -522,7 +532,7 @@ class RawPacketRepository implements
         return $this->botRepo->isBotEnabled($botId);
     }
 
-    public function findClosestBot(float $latitude, float $longitude, bool $onlyEnabled = false): ?array
+    public function findClosestBot(float $latitude, float $longitude, bool $onlyEnabled = true): ?array
     {
         return $this->botRepo->findClosestBot($latitude, $longitude, $onlyEnabled);
     }

@@ -222,7 +222,6 @@ SQL;
                 $this->pdo->exec('CREATE INDEX IF NOT EXISTS idx_' . $this->table . '_bot_id ON ' . $this->table . ' (bot_id)');
 
                 $this->pdo->exec("DELETE FROM telemetry WHERE type = 'ADVERT' OR (type != 'TELEMETRY' AND type != 'STATUS')");
-                $this->pdo->exec("UPDATE nodes SET password = 'hello' WHERE is_repeater = true AND (password IS NULL OR TRIM(password) = '')");
                 $this->pdo->exec("
                     UPDATE nodes n
                     SET telemetry_updated_at = (
@@ -311,7 +310,6 @@ SQL;
                 }
 
                 $this->pdo->exec("DELETE FROM telemetry WHERE type = 'ADVERT' OR (type != 'TELEMETRY' AND type != 'STATUS')");
-                $this->pdo->exec("UPDATE `nodes` SET `password` = 'hello' WHERE `is_repeater` = 1 AND (`password` IS NULL OR TRIM(`password`) = '')");
                 
                 $this->pdo->exec("
                     UPDATE nodes n 

@@ -275,7 +275,11 @@ SQL;
                     SELECT public_key, node_id, node_name, is_repeater
                     FROM nodes
                     WHERE LOWER(node_id) = :nid OR LOWER(public_key) LIKE :pref
-                    ORDER BY is_repeater DESC, (UPPER(COALESCE(bot_id, '')) = :bot_id) DESC, last_seen_at DESC
+                    ORDER BY is_repeater DESC,
+                             (COALESCE(is_disabled, 0) = 0) DESC,
+                             (UPPER(COALESCE(bot_id, '')) = :bot_id) DESC,
+                             requested_date DESC,
+                             last_seen_at DESC
                     LIMIT 1
                 ");
                 $stmt->execute([
@@ -291,8 +295,9 @@ SQL;
                 FROM nodes
                 WHERE LOWER(public_key) LIKE :pref
                 ORDER BY is_repeater DESC,
+                         (COALESCE(is_disabled, 0) = 0) DESC,
                          (UPPER(COALESCE(bot_id, '')) = :bot_id) DESC,
-                         CASE WHEN requested_date IS NOT NULL THEN 1 ELSE 0 END DESC,
+                         requested_date DESC,
                          last_seen_at DESC
                 LIMIT 1
             ");
@@ -543,6 +548,9 @@ SQL;
                 $savedTelemetryId = $this->telemetryRepo->extractAndSaveTelemetry($id, $decoded, $record);
             }
 
+            $originalSenderPubKey = !empty($record['sender_public_key']) ? (string)$record['sender_public_key'] : null;
+            $originalSenderName   = !empty($record['sender_name']) ? (string)$record['sender_name'] : null;
+
             $endpoints = $this->resolvePacketEndpoints($decoded, is_array($record) ? $record : []);
             $this->updatePacketEndpointsInDb($id, $endpoints);
             if (empty($record['sender_name']) && !empty($endpoints['sender_name'])) {
@@ -559,11 +567,12 @@ SQL;
             }
 
             if ($savedTelemetryId === null && empty($decoded['advert']) && !empty($record['direction']) && strtoupper((string)$record['direction']) === 'RX') {
-                $senderKey = !empty($record['sender_public_key'])
-                    ? (string)$record['sender_public_key']
-                    : (!empty($decoded['encryption']['sender_public_key'])
+                // SVARBU: touchNodeSeen ir maršruto (returnPath) atnaujinimą vykdome TIK tada, kai
+                // siuntėjas buvo tiksliai žinomas (iš boto arba iš ANON_REQ sender_public_key), o NE atspėtas iš hops[0]!
+                $senderKey = $originalSenderPubKey
+                    ?: (!empty($decoded['encryption']['sender_public_key'])
                         ? (string)$decoded['encryption']['sender_public_key']
-                        : (!empty($record['sender_name']) ? (string)$record['sender_name'] : null));
+                        : $originalSenderName);
                 if ($senderKey && $this->nodeRepo !== null) {
                     $bId = !empty($record['bot_id']) ? (string)$record['bot_id'] : 'KLP';
                     $r = isset($record['rssi']) ? (float)$record['rssi'] : null;

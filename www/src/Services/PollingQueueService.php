@@ -94,7 +94,10 @@ class PollingQueueService implements PollingQueueServiceInterface
             $absFunc = 'ABS';
         }
 
-        $inBounds = "({$latCol} >= {$latMin} AND {$latCol} <= {$latMax} AND {$lonCol} >= {$lonMin} AND {$lonCol} <= {$lonMax})";
+        // Atmetame pietryčių Latvijos (Sēlija / Jēkabpils / Daugavpils / Nereta / Aknīste) kampą,
+        // kuris patenka į stačiakampį lat <= 56.45, lon <= 26.85 šiauriau Rokiškio ir Zarasų:
+        $notLatviaCorner = "NOT ({$latCol} > 56.15 AND {$lonCol} > 25.15) AND NOT ({$latCol} > 55.90 AND {$lonCol} > 26.00)";
+        $inBounds = "({$latCol} >= {$latMin} AND {$latCol} <= {$latMax} AND {$lonCol} >= {$lonMin} AND {$lonCol} <= {$lonMax} AND {$notLatviaCorner})";
         $noCoords = "({$latCol} IS NULL OR {$lonCol} IS NULL OR ({$absFunc}({$latCol}) < 0.001 AND {$absFunc}({$lonCol}) < 0.001))";
 
         if ($includeNoCoords) {
@@ -233,9 +236,9 @@ class PollingQueueService implements PollingQueueServiceInterface
                             ? strtolower(trim($row['node_id'])) 
                             : substr($pubId, 0, 4);
 
-                        $password = ($row['password'] !== null && trim((string)$row['password']) !== '') 
-                            ? trim((string)$row['password']) 
-                            : 'hello';
+                        $password = $row['password'] !== null
+                            ? trim((string)$row['password'])
+                            : null;
 
                         $rawPath = strtoupper(trim((string)($row['last_path'] ?? '')));
                         $isValidHexPath = ($rawPath !== '' && $rawPath !== 'FLOOD' && $rawPath !== 'DIRECT'
@@ -322,7 +325,7 @@ class PollingQueueService implements PollingQueueServiceInterface
                                     $repeaters[] = [
                                         'name'      => (string)($item['name'] ?? substr($pubId, 0, 4)),
                                         'public_id' => $pubId,
-                                        'password'  => (isset($item['password']) && trim((string)$item['password']) !== '') ? trim((string)$item['password']) : 'hello',
+                                        'password'  => array_key_exists('password', $item) && $item['password'] !== null ? trim((string)$item['password']) : null,
                                         'isDirect'  => isset($item['isDirect']) ? (bool)$item['isDirect'] : false,
                                         'status'    => isset($item['status']) ? (bool)$item['status'] : true,
                                         'telemetry' => isset($item['telemetry']) ? (bool)$item['telemetry'] : true,
@@ -613,6 +616,7 @@ class PollingQueueService implements PollingQueueServiceInterface
                 WHERE (is_repeater = true) AND ("update" = true) AND (is_disabled = false OR is_disabled IS NULL) {$failFilterPgsql} {$timingFilterPgsql} {$botFilterPgsql} {$geoFilterPgsql}
                 ORDER BY 
                     CASE WHEN UPPER(nodes.bot_id) = :bot_id_order THEN 0 ELSE 1 END ASC,
+                    CASE WHEN nodes.last_seen_at >= (CURRENT_TIMESTAMP - INTERVAL '72 hours') THEN 0 ELSE 1 END ASC,
                     CASE WHEN requested_date IS NULL THEN 0 ELSE 1 END ASC,
                     requested_date ASC,
                     id ASC
@@ -658,9 +662,9 @@ SQL;
                     $shortName = !empty($row['node_id']) 
                         ? strtolower(trim($row['node_id'])) 
                         : substr($pubId, 0, 4);
-                    $password = ($row['password'] !== null && trim((string)$row['password']) !== '') 
-                        ? trim((string)$row['password']) 
-                        : 'hello';
+                    $password = $row['password'] !== null
+                        ? trim((string)$row['password'])
+                        : null;
                     $rawPath = strtoupper(trim((string)($row['last_path'] ?? '')));
                     $isValidHexPath = ($rawPath !== '' && $rawPath !== 'FLOOD' && $rawPath !== 'DIRECT'
                         && strlen($rawPath) >= 4 && (strlen($rawPath) % 4 === 0)
@@ -704,6 +708,10 @@ SQL;
             }
         }
 
+        $aliveFirstOrder = ($driver === 'sqlite')
+            ? "CASE WHEN `nodes`.`last_seen_at` >= datetime('now', '-72 hours') THEN 0 ELSE 1 END ASC,"
+            : "CASE WHEN `nodes`.`last_seen_at` >= DATE_SUB(NOW(), INTERVAL 72 HOUR) THEN 0 ELSE 1 END ASC,";
+
         // MySQL / SQLite
         $this->pdo->beginTransaction();
         try {
@@ -720,6 +728,7 @@ SQL;
               {$geoFilterMysql}
             ORDER BY 
                 CASE WHEN UPPER(`nodes`.`bot_id`) = :bot_id_order THEN 0 ELSE 1 END ASC,
+                {$aliveFirstOrder}
                 CASE WHEN `requested_date` IS NULL THEN 0 ELSE 1 END ASC,
                 `requested_date` ASC,
                 `id` ASC
@@ -776,9 +785,9 @@ SQL;
                 $shortName = !empty($row['node_id']) 
                     ? strtolower(trim($row['node_id'])) 
                     : substr($pubId, 0, 4);
-                $password = ($row['password'] !== null && trim((string)$row['password']) !== '') 
-                    ? trim((string)$row['password']) 
-                    : 'hello';
+                $password = $row['password'] !== null
+                    ? trim((string)$row['password'])
+                    : null;
                 $rawPath = strtoupper(trim((string)($currentPath ?? '')));
                 $isValidHexPath = ($rawPath !== '' && $rawPath !== 'FLOOD' && $rawPath !== 'DIRECT'
                     && strlen($rawPath) >= 4 && (strlen($rawPath) % 4 === 0)

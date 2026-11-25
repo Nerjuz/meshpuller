@@ -1732,8 +1732,8 @@ $isLoggedIn = isAdminLoggedIn();
 
                         <div class="form-group">
                             <label for="editNodePassword">Valdymo Slaptažodis (ESP32 Botui)</label>
-                            <input type="text" id="editNodePassword" class="form-control" placeholder="Slaptažodis kartotuvo telemetrijai siųsti (jei tuščias, bus &quot;hello&quot;)">
-                            <div style="font-size: 0.70rem; color: var(--text-dim); margin-top: 4px;">Šis slaptažodis perduodamas į /api/repeater JSON (pagal nutylėjimą: <code>hello</code>).</div>
+                            <input type="text" id="editNodePassword" class="form-control" placeholder="Slaptažodis kartotuvo telemetrijai siųsti (gali būti tuščias)">
+                            <div style="font-size: 0.70rem; color: var(--text-dim); margin-top: 4px;">Šis slaptažodis perduodamas į /api/repeater JSON toks, koks įrašytas DB (jei tuščias – siunčiamas tuščias kodas).</div>
                         </div>
 
                         <div class="form-group">
@@ -2803,8 +2803,7 @@ $isLoggedIn = isAdminLoggedIn();
             document.getElementById('editNodePublicKey').value = node.public_key;
             document.getElementById('editNodeKeyDisplay').value = node.public_key;
             document.getElementById('editNodeName').value = node.node_name || '';
-            const defaultPwd = (node.is_repeater == 1 || node.is_repeater === true) ? 'hello' : '';
-            document.getElementById('editNodePassword').value = (node.password !== null && node.password !== undefined && String(node.password).trim() !== '') ? node.password : defaultPwd;
+            document.getElementById('editNodePassword').value = (node.password !== null && node.password !== undefined) ? String(node.password) : '';
             
             const rawPath = (node.last_path || '').trim();
             const isFlood = (rawPath.toUpperCase() === 'FLOOD');
