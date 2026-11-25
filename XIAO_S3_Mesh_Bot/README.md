@@ -48,6 +48,23 @@ Pilna sistemos dokumentacija, veikimo principai, parametrų aprašymas ir duomen
 
 Visi keičiami parametrai yra sutelkti faile `config.h`.
 
+**MeshCore regionas.** Įjungus `ENABLE_SCOPE`, į `SCOPE_NAME` įrašykite viešo regiono
+pavadinimą, pvz., `kun` arba `#kun` (abu lygiaverčiai). Regionas turi leisti FLOOD
+persiuntimą maršruto kartotuvuose. Transporto kodas skaičiuojamas kiekvienam FLOOD
+paketui; žinomam keliui naudojamas įprastas DIRECT maršrutas be transporto kodų.
+Privatūs `$` regionai nepalaikomi. Suderinamumui su MeshCore palikite `SCOPE_CODE_1`
+ir `SCOPE_CODE_2` lygius nuliui. Nenulinis `SCOPE_CODE_1` įjungia seną fiksuotų FLOOD
+kodų režimą; `SCOPE_CODE_2` vienas neveikia.
+
+Scope paketo baitus galima patikrinti kompiuteryje su C++ ir mbed TLS kūrimo
+bibliotekomis. Komanda iš repozitorijos šakninio katalogo:
+
+```sh
+mkdir -p .tmp
+c++ -std=c++11 -Wall -Wextra -Werror tests/meshcore_packet_scope.cpp -lmbedcrypto -o .tmp/meshcore_packet_scope
+./.tmp/meshcore_packet_scope
+```
+
 ### 3.1. Wi-Fi ir API nustatymai
 
 ```cpp

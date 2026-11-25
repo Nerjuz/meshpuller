@@ -14,17 +14,12 @@
 #include <ArduinoJson.h>
 #include "config.h"
 #include "MeshCrypto.h"
+#include "MeshCorePacket.h"
 #include "WebConfigPortal.h"
 
 // ================================================================================
 // 📡 MESHCORE PROTOKOLO KONSTANTOS
 // ================================================================================
-
-// MeshCore Maršrutizavimo Tipai (Header bits 0-1)
-#define ROUTE_TYPE_TRANSPORT_FLOOD  0x00
-#define ROUTE_TYPE_FLOOD            0x01
-#define ROUTE_TYPE_DIRECT           0x02
-#define ROUTE_TYPE_TRANSPORT_DIRECT 0x03
 
 // MeshCore Krovinio Tipai (Header bits 2-5)
 #define PAYLOAD_TYPE_REQ            0x00  // Užklausa
@@ -229,8 +224,6 @@ void sendMeshCoreRaw(uint8_t header, uint8_t pathLen, const uint8_t* path, const
                      const char* targetName = nullptr, const char* targetPubKey = nullptr, const uint8_t* sharedSecret = nullptr);
 void yieldDelay(unsigned long ms);
 uint8_t getPathLengthByte(uint8_t hops = 0);
-uint16_t getScopeTransportCode1();
-uint8_t getDefaultFloodRouteType();
 
 // Foninės API siuntimo eilės ir užduoties kintamieji (Core 0):
 struct QueuedApiMessage {
@@ -275,8 +268,12 @@ void setup() {
   Serial.printf("[Info] Mazgų kelio (Path) hash: %u bitai (%u baitai)\n", PATH_HASH_BITS, (unsigned int)(PATH_HASH_BITS / 8));
   Serial.printf("[Info] ESP32 Boto Identifikatorius (BOT_ID): '%s'\n", BOT_ID.c_str());
   if (ENABLE_SCOPE) {
-    Serial.printf("[Info] Regioninis Scope: ĮJUNGTAS ('%s' -> Code1: 0x%04X, Code2: 0x%04X)\n",
-                  SCOPE_NAME.c_str(), getScopeTransportCode1(), SCOPE_CODE_2);
+    if (SCOPE_CODE_1 != 0) {
+      Serial.println("[Info] Regioninis Scope: naudojami fiksuoti (legacy) FLOOD transporto kodai.");
+    } else {
+      Serial.printf("[Info] Regioninis Scope: ĮJUNGTAS ('%s', FLOOD kodas skaičiuojamas kiekvienam paketui)\n",
+                    SCOPE_NAME.c_str());
+    }
   } else {
     Serial.println("[Info] Regioninis Scope: IŠJUNGTAS (Unscoped flood)");
   }
@@ -937,13 +934,11 @@ void confirmRoute(size_t repIdx) {
 }
 
 // Grąžina maršrutizavimo antraštę konkrečiam kartotuvui:
-// Jei kelias žinomas: ROUTE_TYPE_DIRECT (arba ROUTE_TYPE_TRANSPORT_DIRECT su Scope)
+// Jei kelias žinomas: ROUTE_TYPE_DIRECT (be Scope)
 // Jei kelias nežinomas: ROUTE_TYPE_FLOOD (arba ROUTE_TYPE_TRANSPORT_FLOOD su Scope)
 uint8_t getRepeaterRouteHeader(uint8_t payloadType, size_t repIdx) {
-  uint8_t rType = getDefaultFloodRouteType();
-  if (repIdx < monitoredRepeatersCount && monitoredNodes[repIdx].hasRoute) {
-    rType = ENABLE_SCOPE ? ROUTE_TYPE_TRANSPORT_DIRECT : ROUTE_TYPE_DIRECT;
-  }
+  bool hasKnownRoute = repIdx < monitoredRepeatersCount && monitoredNodes[repIdx].hasRoute;
+  uint8_t rType = MeshCorePacket::repeaterRouteType(hasKnownRoute, ENABLE_SCOPE);
   return ((payloadType & 0x0F) << 2) | rType;
 }
 
@@ -979,26 +974,6 @@ uint8_t getPathLengthByte(uint8_t hops) {
   return ((hashSize - 1) << 6) | (hops & 0x3F);
 }
 
-// Apskaičiuoja 16 bitų Transport Code 1 iš SCOPE_NAME (arba grąžina fiksuotą SCOPE_CODE_1)
-uint16_t getScopeTransportCode1() {
-  if (SCOPE_CODE_1 != 0x0000) return SCOPE_CODE_1;
-  if (SCOPE_NAME.length() == 0) return 0x0000;
-  uint8_t hash[32];
-  const mbedtls_md_info_t* mdInfo = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
-  if (mdInfo != nullptr) {
-    mbedtls_md(mdInfo, (const unsigned char*)SCOPE_NAME.c_str(), SCOPE_NAME.length(), hash);
-    return (uint16_t)(hash[0] | (hash[1] << 8));
-  }
-  return 0x0000;
-}
-
-// Grąžina numatytąjį potinklio transliacijos tipą:
-// Jei ENABLE_SCOPE įjungtas -> ROUTE_TYPE_TRANSPORT_FLOOD (0x00)
-// Jei išjungtas -> ROUTE_TYPE_FLOOD (0x01)
-uint8_t getDefaultFloodRouteType() {
-  return ENABLE_SCOPE ? ROUTE_TYPE_TRANSPORT_FLOOD : ROUTE_TYPE_FLOOD;
-}
-
 // ================================================================================
 // 📤 MESHCORE PAKETŲ SIUNTIMAS
 // ================================================================================
@@ -1006,45 +981,23 @@ uint8_t getDefaultFloodRouteType() {
 void sendMeshCoreRaw(uint8_t header, uint8_t pathLen, const uint8_t* path, const uint8_t* payload, size_t payloadLen,
                      const char* targetName, const char* targetPubKey, const uint8_t* sharedSecret) {
   uint8_t packet[256];
-  size_t idx = 0;
-
-  // 1. Header baitas
-  packet[idx++] = header;
-
-  // 2. Transport kodai (Scope palaikymas, jei ROUTE_TYPE_TRANSPORT_FLOOD arba ROUTE_TYPE_TRANSPORT_DIRECT)
+  size_t idx = MeshCorePacket::encode(packet, sizeof(packet), header, pathLen, path, payload, payloadLen,
+                                      {SCOPE_NAME.c_str(), static_cast<uint16_t>(SCOPE_CODE_1),
+                                       static_cast<uint16_t>(SCOPE_CODE_2)});
   uint8_t rType = header & 0x03;
-  if (rType == ROUTE_TYPE_TRANSPORT_FLOOD || rType == ROUTE_TYPE_TRANSPORT_DIRECT) {
-    uint16_t tCode1 = getScopeTransportCode1();
-    uint16_t tCode2 = SCOPE_CODE_2;
-    packet[idx++] = (uint8_t)(tCode1 & 0xFF);
-    packet[idx++] = (uint8_t)((tCode1 >> 8) & 0xFF);
-    packet[idx++] = (uint8_t)(tCode2 & 0xFF);
-    packet[idx++] = (uint8_t)((tCode2 >> 8) & 0xFF);
-  }
-
-  // 3. Kelio ilgio baitas (apima hash bitų dydį ir šuolių skaičių)
-  packet[idx++] = pathLen;
-
-  // 4. Kelio mazgų sąrašas (jei yra nurodytas kelias)
-  if (path != nullptr && (pathLen & 0x3F) > 0) {
-    uint8_t hashSize = ((pathLen >> 6) & 0x03) + 1;
-    size_t pathByteLen = (size_t)(pathLen & 0x3F) * hashSize;
-    memcpy(&packet[idx], path, pathByteLen);
-    idx += pathByteLen;
-  }
-
-  // 5. Duomenų krovinys (Payload)
-  if (payload != nullptr && payloadLen > 0) {
-    memcpy(&packet[idx], payload, payloadLen);
-    idx += payloadLen;
+  if (!idx) {
+    Serial.println(MeshCorePacket::hasTransportCodes(rType)
+      ? "[LoRa TX KLAIDA] Nepavyko paruošti Scope paketo: patikrinkite viešą SCOPE_NAME ir transporto kodų nustatymus."
+      : "[LoRa TX KLAIDA] Nepavyko paruošti paketo.");
+    return;
   }
 
   uint8_t pType = (header >> 2) & 0x0F;
 
   Serial.printf("[LoRa TX] Siunčiamas paketas (%u baitai) | Header: 0x%02X (Tipas: %u, Maršrutas: %u",
                 (unsigned int)idx, header, pType, rType);
-  if (rType == ROUTE_TYPE_TRANSPORT_FLOOD || rType == ROUTE_TYPE_TRANSPORT_DIRECT) {
-    Serial.printf(", Scope: 0x%04X:0x%04X", getScopeTransportCode1(), SCOPE_CODE_2);
+  if (MeshCorePacket::hasTransportCodes(rType)) {
+    Serial.printf(", Scope: 0x%02X%02X:0x%02X%02X", packet[2], packet[1], packet[4], packet[3]);
   }
   Serial.printf(", PathLenByte: 0x%02X) | RAW HEX: ", pathLen);
   printHexBuffer(packet, idx);
