@@ -1113,27 +1113,26 @@ SQL;
         $heardBotEnabled = $this->isBotEnabledInDb($heardBotId);
 
         // Nustatome geriausias žinomas mazgo koordinates (iš naujo ADVERT arba iš DB)
-        $effLat = ($lat !== null && abs($lat) > 0.0001)
-            ? $lat
-            : (isset($existingNode['latitude']) && $existingNode['latitude'] !== null ? (float)$existingNode['latitude'] : null);
-        $effLon = ($lon !== null && abs($lon) > 0.0001)
-            ? $lon
-            : (isset($existingNode['longitude']) && $existingNode['longitude'] !== null ? (float)$existingNode['longitude'] : null);
+        $dbLat = (isset($existingNode['latitude']) && $existingNode['latitude'] !== null) ? (float)$existingNode['latitude'] : null;
+        $dbLon = (isset($existingNode['longitude']) && $existingNode['longitude'] !== null) ? (float)$existingNode['longitude'] : null;
+        $hadCoordsInDb = ($dbLat !== null && $dbLon !== null && (abs($dbLat) > 0.0001 || abs($dbLon) > 0.0001));
+
+        $effLat = ($lat !== null && abs($lat) > 0.0001) ? $lat : $dbLat;
+        $effLon = ($lon !== null && abs($lon) > 0.0001) ? $lon : $dbLon;
         $hasValidCoords = ($effLat !== null && $effLon !== null && (abs($effLat) > 0.0001 || abs($effLon) > 0.0001));
 
-        // Surandame artimiausią aktyvų (enabled = 1) botą pagal GPS koordinates
-        $closestBotId = null;
-        if ($hasValidCoords) {
-            $closest = ($this->botRepo !== null)
-                ? $this->botRepo->findClosestBot($effLat, $effLon, true)
-                : $this->findClosestBotViaPdo($effLat, $effLon, true);
-            if ($closest && !empty($closest['bot_id'])) {
-                $closestBotId = strtoupper(substr(trim((string)$closest['bot_id']), 0, 16));
-            }
-        }
-
         // 1. NAUJAS MAZGAS (dar nėra 'nodes' lentelėje):
+        // Priskiriame arčiausiam aktyviam (enabled = 1) botui pagal GPS koordinates
         if ($existingNode === null) {
+            $closestBotId = null;
+            if ($hasValidCoords) {
+                $closest = ($this->botRepo !== null)
+                    ? $this->botRepo->findClosestBot($effLat, $effLon, true)
+                    : $this->findClosestBotViaPdo($effLat, $effLon, true);
+                if ($closest && !empty($closest['bot_id'])) {
+                    $closestBotId = strtoupper(substr(trim((string)$closest['bot_id']), 0, 16));
+                }
+            }
             $targetBotId = $closestBotId ?? ($heardBotEnabled ? $heardBotId : $this->findFirstEnabledBotId());
             $initialPath = ($heardBotId === $targetBotId) ? $candidatePath : null;
             return [
@@ -1146,8 +1145,8 @@ SQL;
         // 2. ESAMAS MAZGAS:
         $existingBotId = !empty($existingNode['bot_id'])
             ? strtoupper(substr(trim((string)$existingNode['bot_id']), 0, 16))
-            : $this->findFirstEnabledBotId();
-        $existingBotEnabled = $this->isBotEnabledInDb($existingBotId);
+            : '';
+        $existingBotEnabled = ($existingBotId !== '') && $this->isBotEnabledInDb($existingBotId);
         $isLocked = !empty($existingNode['is_bot_locked']);
         $existingPath = ($existingNode['last_path'] !== null && trim((string)$existingNode['last_path']) !== '')
             ? strtoupper(trim((string)$existingNode['last_path']))
@@ -1155,18 +1154,24 @@ SQL;
         $isForceFlood = ($existingPath === 'FLOOD');
         $existingFailCount = (int)($existingNode['telemetry_fail_count'] ?? 0);
 
-        // Nustatome, kuriam botui mazgas turi priklausyti pagal GPS lokaciją.
-        // Išjungtam botui (enabled = 0) mazgas NIEKADA nepriskiriamas ir nelieka priskirtas!
-        if ($isLocked && $existingBotEnabled) {
+        // Jei mazgas jau turi priskirtą aktyvų botą (ir jau turėjo GPS koordinates DB),
+        // jo bot_id neperrašinėjamas kiekvieno paketo metu (kad nedingtų rankiniu būdu priskirtas botas ir jo last_path).
+        // GPS paieška vykdoma tik tada, kai:
+        // - esamas botas išjungtas / nenurodytas, ARBA
+        // - mazgas anksčiau neturėjo GPS koordinačių DB, o dabar pirmą kartą gavo koordinates (ir nėra užrakintas).
+        if ($existingBotEnabled && ($isLocked || $hadCoordsInDb || !$hasValidCoords)) {
             $targetBotId = $existingBotId;
-        } elseif ($closestBotId !== null) {
-            $targetBotId = $closestBotId;
-        } elseif ($existingBotEnabled) {
-            $targetBotId = $existingBotId;
-        } elseif ($heardBotEnabled) {
-            $targetBotId = $heardBotId;
         } else {
-            $targetBotId = $this->findFirstEnabledBotId();
+            $closestBotId = null;
+            if ($hasValidCoords) {
+                $closest = ($this->botRepo !== null)
+                    ? $this->botRepo->findClosestBot($effLat, $effLon, true)
+                    : $this->findClosestBotViaPdo($effLat, $effLon, true);
+                if ($closest && !empty($closest['bot_id'])) {
+                    $closestBotId = strtoupper(substr(trim((string)$closest['bot_id']), 0, 16));
+                }
+            }
+            $targetBotId = $closestBotId ?? ($existingBotEnabled ? $existingBotId : ($heardBotEnabled ? $heardBotId : $this->findFirstEnabledBotId()));
         }
 
         // Jei mazgas buvo priskirtas kitam botui, o pagal lokaciją priklauso $targetBotId – perjungiame į artimiausią botą!
