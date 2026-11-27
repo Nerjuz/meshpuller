@@ -1,4 +1,14 @@
 <?php
+// Kanoninio URL patikra: jei atidaroma per /admin/ arba /public/admin/ (ne per /api/admin/),
+// automatiškai peradresuojame į pagrindinį https://telemetry.ite.lt/api/admin/
+$reqUri = $_SERVER['REQUEST_URI'] ?? '';
+$reqPath = (string)parse_url($reqUri, PHP_URL_PATH);
+if ($reqPath !== '' && strpos($reqPath, '/api/admin') !== 0) {
+    $qs = !empty($_SERVER['QUERY_STRING']) ? ('?' . $_SERVER['QUERY_STRING']) : '';
+    header('Location: /api/admin/' . $qs, true, 301);
+    exit;
+}
+
 require_once __DIR__ . '/config.php';
 $isLoggedIn = isAdminLoggedIn();
 ?>
@@ -185,23 +195,31 @@ $isLoggedIn = isAdminLoggedIn();
         }
 
         .btn-sm {
-            padding: 3px 8px;
-            font-size: 0.72rem;
+            padding: 4px 10px;
+            font-size: 0.74rem;
             border-radius: var(--radius-sm);
         }
 
         .btn-icon {
-            width: 26px;
-            height: 26px;
-            min-width: 26px;
+            width: 30px;
+            height: 30px;
+            min-width: 30px;
             padding: 0;
-            font-size: 0.82rem;
+            font-size: 0.88rem;
             line-height: 1;
             display: inline-flex;
             align-items: center;
             justify-content: center;
             border-radius: var(--radius-sm);
             flex-shrink: 0;
+        }
+
+        .action-btn-group {
+            display: inline-flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 4px;
+            flex-wrap: nowrap;
         }
 
         /* Prisijungimo ekranas */
@@ -738,11 +756,400 @@ $isLoggedIn = isAdminLoggedIn();
         .toast-msg.success { border-color: var(--accent-green); }
         .toast-msg.error { border-color: var(--accent-red); }
 
-        /* Mobiliems įrenginiams */
+        /* Pagalbinės mobilaus ir darbalaukio rodymo klasės */
+        .show-on-mobile-inline {
+            display: none;
+        }
+
+        /* Apatinė mobilioji navigacija (rodoma tik telefonuose) */
+        .mobile-bottom-nav {
+            display: none;
+        }
+
+        /* =========================================================
+           MOBILE-FIRST RESPONSIVE DIZAINAS (<= 768px)
+           ========================================================= */
         @media (max-width: 768px) {
-            .admin-container { padding: 10px; }
-            .tab-btn { padding: 8px 12px; font-size: 0.78rem; }
-            .stats-banner { grid-template-columns: 1fr 1fr; }
+            body {
+                padding-bottom: 68px; /* Vieta apatinei mobiliai navigacijai */
+            }
+
+            header.admin-navbar {
+                height: 48px;
+                padding: 0 12px;
+                position: sticky;
+                top: 0;
+                z-index: 150;
+            }
+
+            .brand-container {
+                gap: 8px;
+            }
+
+            .brand-title {
+                font-size: 0.96rem;
+            }
+
+            .brand-badge {
+                display: none;
+            }
+
+            .nav-links {
+                gap: 6px;
+            }
+
+            .nav-links .btn-sm {
+                padding: 6px 9px;
+                font-size: 0.74rem;
+            }
+
+            .nav-links .nav-btn-label {
+                display: none;
+            }
+
+            .admin-container {
+                padding: 10px;
+                gap: 12px;
+            }
+
+            /* Kompaktiška horizontali arba 4-stulpelių statistikos juosta telefone */
+            .stats-banner {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 8px;
+            }
+
+            #statsBanner {
+                display: flex;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: none;
+                gap: 8px;
+                padding-bottom: 2px;
+            }
+
+            #statsBanner::-webkit-scrollbar {
+                display: none;
+            }
+
+            #statsBanner .stat-box {
+                min-width: 118px;
+                flex: 0 0 auto;
+                padding: 8px 11px;
+            }
+
+            .stat-box {
+                padding: 9px 12px;
+            }
+
+            .stat-box .val {
+                font-size: 1.12rem;
+            }
+
+            .stat-box .lbl {
+                font-size: 0.64rem;
+                white-space: nowrap;
+            }
+
+            /* Viršutinė skirtukų juosta – slenkama horizontaliai */
+            .tab-nav {
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: none;
+                flex-wrap: nowrap;
+                gap: 4px;
+                margin: 0 -10px;
+                padding: 0 10px 2px 10px;
+            }
+
+            .tab-nav::-webkit-scrollbar {
+                display: none;
+            }
+
+            .tab-btn {
+                padding: 8px 12px;
+                font-size: 0.78rem;
+                white-space: nowrap;
+                flex-shrink: 0;
+            }
+
+            /* Apatinė fiksuota mobilioji navigacija (greitam perjungimui nykščiu) */
+            .mobile-bottom-nav {
+                display: grid;
+                grid-template-columns: repeat(7, 1fr);
+                position: fixed;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                height: 60px;
+                background: rgba(24, 24, 24, 0.96);
+                backdrop-filter: blur(10px);
+                border-top: 1px solid var(--border-color);
+                z-index: 1200;
+                padding: 4px 2px env(safe-area-inset-bottom, 4px) 2px;
+                box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.55);
+            }
+
+            .mobile-nav-item {
+                background: transparent;
+                border: none;
+                color: var(--text-muted);
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                gap: 2px;
+                font-size: 0.60rem;
+                font-weight: 600;
+                cursor: pointer;
+                padding: 4px 2px;
+                border-radius: var(--radius-sm);
+                transition: color 0.15s ease, background 0.15s ease;
+            }
+
+            .mobile-nav-item .m-icon {
+                font-size: 1.05rem;
+                line-height: 1.1;
+            }
+
+            .mobile-nav-item.active {
+                color: var(--accent-cyan);
+                background: rgba(0, 210, 255, 0.08);
+            }
+
+            /* Filtrų kortelės pritaikymas telefonui */
+            .filter-card {
+                padding: 10px 12px;
+                gap: 10px;
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .filter-group {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 8px;
+                width: 100%;
+            }
+
+            .filter-group > .input-clearable-wrapper,
+            .filter-group > .filter-chip {
+                grid-column: 1 / -1;
+                width: 100% !important;
+            }
+
+            .filter-group > select.form-control,
+            .filter-group > div {
+                width: 100% !important;
+            }
+
+            .filter-group > div > select.form-control {
+                width: 100% !important;
+            }
+
+            .form-control {
+                font-size: 16px; /* Apsaugo nuo iOS automatinio priartinimo (zoom) */
+                min-height: 40px;
+                padding: 8px 10px;
+            }
+
+            .hide-on-mobile {
+                display: none !important;
+            }
+
+            .show-on-mobile-inline {
+                display: inline-block;
+            }
+
+            /* Lentelių transformavimas į mobilias korteles (Mobile Cards) */
+            .table-wrapper:has(table.admin-table) {
+                background: transparent;
+                border: none;
+                box-shadow: none;
+                overflow-x: visible;
+            }
+
+            table.admin-table,
+            table.admin-table tbody {
+                display: block;
+                width: 100%;
+            }
+
+            /* Rūšiavimo juosta (Sort Pills) virš mobilių kortelių */
+            table.admin-table thead {
+                display: block;
+                margin-bottom: 8px;
+            }
+
+            table.admin-table thead tr {
+                display: flex;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: none;
+                gap: 6px;
+                padding: 2px 0;
+            }
+
+            table.admin-table thead tr::-webkit-scrollbar {
+                display: none;
+            }
+
+            table.admin-table th {
+                display: none;
+            }
+
+            table.admin-table th.sortable {
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+                padding: 6px 11px;
+                border: 1px solid var(--border-color);
+                border-radius: 999px;
+                background: var(--bg-card);
+                font-size: 0.68rem;
+                flex-shrink: 0;
+                width: auto !important;
+            }
+
+            table.admin-table tbody tr {
+                display: flex;
+                flex-direction: column;
+                background: var(--bg-card);
+                border: 1px solid var(--border-color);
+                border-radius: var(--radius-lg);
+                margin-bottom: 10px;
+                padding: 12px;
+                gap: 8px;
+                box-shadow: 0 3px 12px rgba(0, 0, 0, 0.35);
+            }
+
+            table.admin-table tbody tr:hover {
+                background: var(--bg-card);
+            }
+
+            table.admin-table td {
+                display: flex;
+                align-items: flex-start;
+                justify-content: space-between;
+                gap: 10px;
+                padding: 4px 0;
+                border-bottom: 1px dashed rgba(255, 255, 255, 0.07);
+                font-size: 0.82rem;
+                text-align: right;
+                max-width: 100% !important;
+            }
+
+            table.admin-table td:last-child {
+                border-bottom: none;
+            }
+
+            table.admin-table td[data-label]::before {
+                content: attr(data-label);
+                font-size: 0.70rem;
+                font-weight: 600;
+                color: var(--text-muted);
+                text-transform: uppercase;
+                letter-spacing: 0.03em;
+                text-align: left;
+                flex-shrink: 0;
+                max-width: 45%;
+            }
+
+            table.admin-table td.cell-primary {
+                flex-direction: column;
+                align-items: flex-start;
+                text-align: left;
+                padding-bottom: 8px;
+                border-bottom: 1px solid var(--border-color);
+            }
+
+            table.admin-table td.cell-primary::before {
+                display: none;
+            }
+
+            table.admin-table td.cell-actions {
+                padding-top: 8px;
+                margin-top: 2px;
+                border-top: 1px solid var(--border-color);
+                border-bottom: none;
+                justify-content: flex-end;
+            }
+
+            table.admin-table td.cell-actions::before {
+                display: none;
+            }
+
+            .action-btn-group {
+                width: 100%;
+                justify-content: flex-end;
+                gap: 6px;
+                flex-wrap: wrap;
+            }
+
+            .btn-icon {
+                width: 38px;
+                height: 38px;
+                min-width: 38px;
+                font-size: 1rem;
+                border-radius: var(--radius-md);
+            }
+
+            /* Puslapiavimas telefone */
+            .pagination-row {
+                background: var(--bg-card);
+                border: 1px solid var(--border-color);
+                border-radius: var(--radius-md);
+                padding: 10px 12px;
+                margin-top: 4px;
+            }
+
+            .pagination-row .btn-sm {
+                min-height: 36px;
+                padding: 6px 12px;
+                font-size: 0.8rem;
+            }
+
+            /* Modalai telefone – Bottom Sheet / Full Screen stilius */
+            .modal-overlay {
+                padding: 0;
+                align-items: flex-end;
+            }
+
+            .modal-card,
+            .modal-card.modal-lg {
+                max-width: 100%;
+                width: 100%;
+                max-height: 94dvh;
+                border-radius: 16px 16px 0 0;
+                margin: 0;
+                border-bottom: none;
+            }
+
+            .modal-header {
+                padding: 14px 16px;
+            }
+
+            .modal-body {
+                padding: 14px 16px;
+            }
+
+            .modal-footer {
+                padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px)) 16px;
+            }
+
+            .modal-footer .btn {
+                flex: 1;
+                justify-content: center;
+                min-height: 42px;
+                font-size: 0.88rem;
+            }
+
+            .toast-msg {
+                left: 12px;
+                right: 12px;
+                bottom: 72px;
+                font-size: 0.82rem;
+            }
         }
     </style>
 </head>
@@ -762,14 +1169,14 @@ $isLoggedIn = isAdminLoggedIn();
 
         <div class="nav-links">
             <a href="../" target="_blank" class="btn btn-secondary btn-sm" title="Atidaryti viešąjį žemėlapį">
-                <span>🗺️ Žemėlapis</span>
+                <span>🗺️</span><span class="nav-btn-label">Žemėlapis</span>
             </a>
             <?php if ($isLoggedIn): ?>
                 <button class="btn btn-sm" onclick="refreshCurrentTab()" title="Atnaujinti duomenis">
-                    <span>🔄 Atnaujinti</span>
+                    <span>🔄</span><span class="nav-btn-label">Atnaujinti</span>
                 </button>
-                <button class="btn btn-danger btn-sm" onclick="handleLogout()">
-                    <span>Atsijungti</span>
+                <button class="btn btn-danger btn-sm" onclick="handleLogout()" title="Atsijungti">
+                    <span>🚪</span><span class="nav-btn-label">Atsijungti</span>
                 </button>
             <?php endif; ?>
         </div>
@@ -803,35 +1210,35 @@ $isLoggedIn = isAdminLoggedIn();
     <?php else: ?>
         <!-- 2. Pagrindinė administravimo erdvė -->
         <div class="admin-container">
-            <!-- Suvestinės statistika -->
+            <!-- Suvestinės statistika (interaktyvi – paspaudus atidaro atitinkamą skirtuką) -->
             <div class="stats-banner" id="statsBanner">
-                <div class="stat-box">
+                <div class="stat-box" style="cursor: pointer;" onclick="switchTab('nodes')" title="Rodyti visus mazgus">
                     <div class="val" id="statNodesCount">-</div>
-                    <div class="lbl">Visi Mazgai</div>
+                    <div class="lbl">🛰️ Visi Mazgai</div>
                 </div>
-                <div class="stat-box green">
+                <div class="stat-box green" style="cursor: pointer;" onclick="document.getElementById('nodesUpdateFilter').value='1'; switchTab('nodes'); onNodesFilterChange();" title="Rodyti stebimus mazgus (update=1)">
                     <div class="val" id="statMonitoredCount">-</div>
-                    <div class="lbl">Stebimi (Update=1)</div>
+                    <div class="lbl">✅ Stebimi (Update=1)</div>
                 </div>
-                <div class="stat-box blue">
+                <div class="stat-box blue" style="cursor: pointer;" onclick="switchTab('raw')" title="Rodyti visus RAW paketus">
                     <div class="val" id="statRawTotal">-</div>
-                    <div class="lbl">RAW Paketai</div>
+                    <div class="lbl">📦 RAW Paketai</div>
                 </div>
-                <div class="stat-box orange">
+                <div class="stat-box orange" style="cursor: pointer;" onclick="switchTab('tools')" title="Atidaryti kartotuvų telemetrijos užklausų eilę">
                     <div class="val" id="statQueuePending">-</div>
-                    <div class="lbl">Eilėje Laukia</div>
+                    <div class="lbl">⚡ Eilėje Laukia</div>
                 </div>
-                <div class="stat-box red">
+                <div class="stat-box red" style="cursor: pointer;" onclick="document.getElementById('rawStatusFilter').value='errors'; switchTab('raw'); onRawFilterChange();" title="Rodyti RAW paketų klaidas">
                     <div class="val" id="statErrorsCount">-</div>
-                    <div class="lbl">Klaidos Eteryje</div>
+                    <div class="lbl">⚠️ Klaidos Eteryje</div>
                 </div>
-                <div class="stat-box">
+                <div class="stat-box" style="cursor: pointer;" onclick="switchTab('telemetry')" title="Rodyti telemetrijos įrašus">
                     <div class="val" id="statTelemetryCount">-</div>
-                    <div class="lbl">Telemetrijos Įrašai</div>
+                    <div class="lbl">📊 Telemetrijos Įrašai</div>
                 </div>
                 <div class="stat-box cyan" style="cursor: pointer;" onclick="switchTab('bots')" title="Eiti į botų valdymą">
                     <div class="val" id="statBotsCount">-</div>
-                    <div class="lbl">ESP32 Botai</div>
+                    <div class="lbl">🤖 ESP32 Botai</div>
                 </div>
             </div>
 
@@ -2114,6 +2521,38 @@ $isLoggedIn = isAdminLoggedIn();
             </div>
         </div>
 
+        <!-- Apatinė fiksuota mobilioji navigacija (rodoma tik telefonuose <= 768px) -->
+        <nav class="mobile-bottom-nav" id="mobileBottomNav" aria-label="Mobilioji navigacija">
+            <button type="button" class="mobile-nav-item active" id="mTabBtn-nodes" onclick="switchTab('nodes')">
+                <span class="m-icon">🛰️</span>
+                <span>Mazgai</span>
+            </button>
+            <button type="button" class="mobile-nav-item" id="mTabBtn-bots" onclick="switchTab('bots')">
+                <span class="m-icon">🤖</span>
+                <span>Botai</span>
+            </button>
+            <button type="button" class="mobile-nav-item" id="mTabBtn-tools" onclick="switchTab('tools')">
+                <span class="m-icon">⚡</span>
+                <span>Eilė</span>
+            </button>
+            <button type="button" class="mobile-nav-item" id="mTabBtn-telemetry" onclick="switchTab('telemetry')">
+                <span class="m-icon">📊</span>
+                <span>Telemetr.</span>
+            </button>
+            <button type="button" class="mobile-nav-item" id="mTabBtn-raw" onclick="switchTab('raw')">
+                <span class="m-icon">📦</span>
+                <span>RAW</span>
+            </button>
+            <button type="button" class="mobile-nav-item" id="mTabBtn-apilogs" onclick="switchTab('apilogs')">
+                <span class="m-icon">🌐</span>
+                <span>API</span>
+            </button>
+            <button type="button" class="mobile-nav-item" id="mTabBtn-settings" onclick="switchTab('settings')">
+                <span class="m-icon">⚙️</span>
+                <span>Nustat.</span>
+            </button>
+        </nav>
+
         <!-- Pranešimų kortelė (Toast) -->
         <div class="toast-msg" id="toastMsg"></div>
     <?php endif; ?>
@@ -2428,12 +2867,17 @@ $isLoggedIn = isAdminLoggedIn();
 
                 // 2. Aktyvus skirtukas UI
                 currentTab = tab;
-                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-btn, .mobile-nav-item').forEach(b => b.classList.remove('active'));
                 document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
 
                 const btn = document.getElementById(`tabBtn-${tab}`);
+                const mBtn = document.getElementById(`mTabBtn-${tab}`);
                 const content = document.getElementById(`tab-${tab}`);
-                if (btn) btn.classList.add('active');
+                if (btn) {
+                    btn.classList.add('active');
+                    try { btn.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' }); } catch (e) {}
+                }
+                if (mBtn) mBtn.classList.add('active');
                 if (content) content.classList.add('active');
 
                 // 3. Skirtuko duomenų atstatymas ir užkrovimas
@@ -2587,12 +3031,17 @@ $isLoggedIn = isAdminLoggedIn();
             closeModal('apiLogModal', false);
 
             currentTab = tabName;
-            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-btn, .mobile-nav-item').forEach(b => b.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
 
             const btn = document.getElementById(`tabBtn-${tabName}`);
+            const mBtn = document.getElementById(`mTabBtn-${tabName}`);
             const content = document.getElementById(`tab-${tabName}`);
-            if (btn) btn.classList.add('active');
+            if (btn) {
+                btn.classList.add('active');
+                try { btn.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' }); } catch (e) {}
+            }
+            if (mBtn) mBtn.classList.add('active');
             if (content) content.classList.add('active');
 
             if (pushState && !isApplyingUrlState) {
@@ -2781,7 +3230,7 @@ $isLoggedIn = isAdminLoggedIn();
 
                 return `
                     <tr class="${isDis ? 'row-node-disabled' : ''}">
-                        <td>
+                        <td class="cell-primary" data-label="Mazgas">
                             <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                                 <span class="badge badge-blue" style="cursor: pointer;" onclick="openEditNode('${escapeHtml(key)}')" title="Paspauskite, kad atidarytumėte mazgo nustatymus (${escapeHtml(key)})">${id.toUpperCase()}</span>
                                 <span onclick="openEditNode('${escapeHtml(key)}')" style="font-weight: 600; color: #ffffff; cursor: pointer; text-decoration: underline dotted rgba(167, 139, 250, 0.65); text-underline-offset: 3px;" title="Paspauskite, kad atidarytumėte mazgo „${escapeHtml(name)}“ nustatymus ⚙️">${escapeHtml(name)}</span>
@@ -2796,45 +3245,47 @@ $isLoggedIn = isAdminLoggedIn();
                                 ${failCount > 0 ? `<span class="badge badge-red" style="font-size: 0.68rem; font-weight: 700; padding: 1px 5px; cursor: pointer;" onclick="resetNodeFailCount('${id}', '${escapeHtml(name)}')" title="${failCount} nesėkmingi bandymai. Paspauskite, kad nuresetintumėte į 0.">⚠️ ${failCount} fail 🧹</span>` : ''}
                             </div>
                         </td>
-                        <td>
+                        <td data-label="Būsena">
                             ${isDis ? `
                                 <span class="badge badge-red" style="font-weight: 700; cursor: pointer; padding: 2px 8px;" onclick="quickToggleNodeDisabled('${escapeHtml(key)}', false)" title="Mazgas IŠJUNGTAS (neimamas į eilę, nerodomas žemėlapyje). Paspauskite, kad įjungtumėte">⛔ Išjungtas</span>
                             ` : `
                                 <span class="badge badge-green" style="font-weight: 600; cursor: pointer; padding: 2px 8px;" onclick="quickToggleNodeDisabled('${escapeHtml(key)}', true)" title="Mazgas AKTYVUS. Paspauskite, kad išjungtumėte">✅ Aktyvus</span>
                             `}
                         </td>
-                        <td>
+                        <td data-label="Tipas">
                             ${isRep ? '<span class="badge badge-cyan">KARTOTUVAS</span>' : '<span class="badge badge-gray">KLIENTAS</span>'}
                         </td>
-                        <td>
+                        <td data-label="Šaltinis (Botas)">
                             <span class="badge badge-purple" style="cursor: pointer;" onclick="filterNodesByBot('${escapeHtml(botId)}')" title="ESP32 Šaltinis: ${escapeHtml(n.bot_name || botId)}${isBotLocked ? ' (UŽRAKINTAS - neperrašomas per adverto koordinates)' : ''}. Paspauskite filtruoti.">🤖 ${escapeHtml(botId)}${isBotLocked ? ' 🔒' : ''}</span>
                         </td>
-                        <td>
+                        <td data-label="Stebimas (Update)">
                             ${isUp ? '<span class="badge badge-green">TAIP</span>' : '<span class="badge badge-gray">NE</span>'}
                         </td>
-                        <td>
+                        <td data-label="Slaptažodis">
                             ${pass !== '' ? `<span class="badge badge-amber" title="${escapeHtml(pass)}">🔑 Nustatytas</span>` : '<span style="color:var(--text-dim);font-size:0.75rem;">Tuščias ("")</span>'}
                         </td>
-                        <td>
-                            ${hasLoc ? `<span style="color:var(--accent-cyan); font-family:var(--font-mono);">${parseFloat(n.latitude).toFixed(3)}, ${parseFloat(n.longitude).toFixed(3)}</span>` : '<span style="color:var(--text-dim);">Nėra</span>'}
+                        <td data-label="Koordinatės">
+                            ${hasLoc ? `<a href="https://www.google.com/maps?q=${parseFloat(n.latitude).toFixed(5)},${parseFloat(n.longitude).toFixed(5)}" target="_blank" style="color:var(--accent-cyan); font-family:var(--font-mono); text-decoration: none;" title="Atidaryti žemėlapyje">📍 ${parseFloat(n.latitude).toFixed(3)}, ${parseFloat(n.longitude).toFixed(3)}</a>` : '<span style="color:var(--text-dim);">Nėra</span>'}
                         </td>
-                        <td>
+                        <td data-label="Matytas / Telemetrija">
                             <div style="font-size: 0.75rem;" title="Matytas tinkle (LT laiku): ${formatVilniusDate(n.last_seen_at)}">📡 ${formatRelativeTime(n.last_seen_at)}</div>
                             <div style="font-size: 0.70rem; color: #a78bfa; margin-top: 2px;" title="Telemetrija atnaujinta (LT laiku): ${formatVilniusDate(n.telemetry_updated_at)}">
                                 ${n.telemetry_updated_at ? '⏱️ ' + formatRelativeTime(n.telemetry_updated_at) : '<span style="color:var(--text-dim);">⏱️ Nėra</span>'}
                             </div>
                         </td>
-                        <td style="text-align: right; white-space: nowrap;">
-                            <button class="btn btn-secondary btn-icon" onclick="openEditNode('${key}')" title="Keisti nustatymus">⚙️</button>
-                            ${isDis ? `
-                                <button class="btn btn-secondary btn-icon" style="margin-left: 3px; color: #2ed573;" onclick="quickToggleNodeDisabled('${escapeHtml(key)}', false)" title="Įjungti mazgą (Enable)">▶️</button>
-                            ` : `
-                                <button class="btn btn-secondary btn-icon" style="margin-left: 3px; color: #ff6b81;" onclick="quickToggleNodeDisabled('${escapeHtml(key)}', true)" title="Išjungti mazgą (Disable)">⏸️</button>
-                            `}
-                            <button class="btn btn-secondary btn-icon" style="margin-left: 3px;" onclick="resetSingleRequestedDate('${escapeHtml(key)}', '${escapeHtml(name)}')" title="Resetinti šio mazgo eilę (atstatyti requested_date į NULL, nukreipti į eilės pradžią)">⚡</button>
-                            <button class="btn btn-secondary btn-icon" style="margin-left: 3px; ${failCount > 0 ? 'color: #ff6b81;' : ''}" onclick="resetNodeFailCount('${escapeHtml(key)}', '${escapeHtml(name)}')" title="Nuresetinti nesėkmingų bandymų (fail=${failCount}) skaičių į 0">🧹</button>
-                            <button class="btn btn-secondary btn-icon" style="margin-left: 3px;" onclick="filterTelemetryByNode('${id}')" title="Atidaryti telemetrijos įrašus">📊</button>
-                            <button class="btn btn-secondary btn-icon" style="margin-left: 3px;" onclick="filterRawByNode('${id}')" title="Atidaryti RAW paketus">📦</button>
+                        <td class="cell-actions" style="text-align: right; white-space: nowrap;">
+                            <div class="action-btn-group">
+                                <button type="button" class="btn btn-secondary btn-icon" onclick="openEditNode('${escapeHtml(key)}')" title="Mazgo nustatymai (⚙️)">⚙️</button>
+                                ${isDis ? `
+                                    <button type="button" class="btn btn-secondary btn-icon" style="color: #2ed573;" onclick="quickToggleNodeDisabled('${escapeHtml(key)}', false)" title="Įjungti mazgą (▶️)">▶️</button>
+                                ` : `
+                                    <button type="button" class="btn btn-secondary btn-icon" style="color: #ff6b81;" onclick="quickToggleNodeDisabled('${escapeHtml(key)}', true)" title="Išjungti mazgą (⏸️)">⏸️</button>
+                                `}
+                                <button type="button" class="btn btn-secondary btn-icon" onclick="resetSingleRequestedDate('${escapeHtml(key)}', '${escapeHtml(name)}')" title="Nukreipti į eilės pradžią (⚡)">⚡</button>
+                                <button type="button" class="btn btn-secondary btn-icon" style="${failCount > 0 ? 'color: #ff6b81; border-color: #ff6b81;' : ''}" onclick="resetNodeFailCount('${escapeHtml(key)}', '${escapeHtml(name)}')" title="Nuresetinti nesėkmingų bandymų (fail=${failCount}) skaičių į 0 (🧹)">🧹</button>
+                                <button type="button" class="btn btn-secondary btn-icon" onclick="filterTelemetryByNode('${escapeHtml(id)}')" title="Mazgo telemetrijos įrašai (📊)">📊</button>
+                                <button type="button" class="btn btn-secondary btn-icon" onclick="filterRawByNode('${escapeHtml(id)}')" title="Mazgo RAW paketai (📦)">📦</button>
+                            </div>
                         </td>
                     </tr>
                 `;
@@ -3041,9 +3492,10 @@ $isLoggedIn = isAdminLoggedIn();
             document.getElementById('telemetryNodeFilterTag').style.display = 'inline-flex';
             
             currentTab = 'telemetry';
-            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-btn, .mobile-nav-item').forEach(b => b.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
             document.getElementById('tabBtn-telemetry')?.classList.add('active');
+            document.getElementById('mTabBtn-telemetry')?.classList.add('active');
             document.getElementById('tab-telemetry')?.classList.add('active');
 
             updateHistory({ tab: 'telemetry', node: nodeId, page: 0, packet: null }, 'push');
@@ -3189,8 +3641,8 @@ $isLoggedIn = isAdminLoggedIn();
             filtered.forEach(bot => {
                 const isEnabled = (bot.enabled == 1 || bot.enabled === true);
                 const statusBadge = isEnabled
-                    ? `<span class="badge badge-green" style="cursor: pointer;" onclick="quickToggleBot('${escapeHtml(bot.bot_id)}', false)" title="Paspauskite, kad išjungtumėte">● Aktyvus</span>`
-                    : `<span class="badge badge-red" style="cursor: pointer;" onclick="quickToggleBot('${escapeHtml(bot.bot_id)}', true)" title="Paspauskite, kad įjungtumėte">○ Išjungtas</span>`;
+                    ? `<span class="badge badge-green" style="cursor: pointer; padding: 2px 8px;" onclick="quickToggleBot('${escapeHtml(bot.bot_id)}', false)" title="Paspauskite, kad išjungtumėte">✅ Aktyvus</span>`
+                    : `<span class="badge badge-red" style="cursor: pointer; padding: 2px 8px;" onclick="quickToggleBot('${escapeHtml(bot.bot_id)}', true)" title="Paspauskite, kad įjungtumėte">⛔ Išjungtas</span>`;
 
                 const intMins = (bot.telemetry_interval_mins !== null && bot.telemetry_interval_mins !== undefined && parseInt(bot.telemetry_interval_mins, 10) > 0)
                     ? parseInt(bot.telemetry_interval_mins, 10)
@@ -3244,7 +3696,7 @@ $isLoggedIn = isAdminLoggedIn();
 
                 const totalNodes = parseInt(bot.total_nodes_count || 0, 10);
                 const repCount = parseInt(bot.repeaters_count || 0, 10);
-                const nodesBadge = `<span class="badge badge-cyan" style="cursor: pointer;" onclick="filterNodesByBot('${escapeHtml(bot.bot_id)}')" title="Rodyti šio boto mazgus">${totalNodes} mazg. (${repCount} kart.)</span>`;
+                const nodesBadge = `<span class="badge badge-cyan" style="cursor: pointer;" onclick="filterNodesByBot('${escapeHtml(bot.bot_id)}')" title="Rodyti šio boto mazgus">🛰️ ${totalNodes} mazg. (${repCount} kart.)</span>`;
 
                 let lastSeen = '<span style="color: var(--text-dim);">—</span>';
                 if (bot.last_seen_at) {
@@ -3254,26 +3706,34 @@ $isLoggedIn = isAdminLoggedIn();
                 const descSub = bot.description ? `<div style="font-size: 0.75rem; color: var(--text-dim); margin-top: 3px;">${escapeHtml(bot.description)}</div>` : '';
 
                 html += `<tr>
-                    <td>
-                        <span class="badge badge-purple" style="font-family: var(--font-mono); font-weight: 700; font-size: 0.88rem;">${escapeHtml(bot.bot_id)}</span>
+                    <td class="cell-primary" data-label="Botas">
+                        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                            <span class="badge badge-purple" style="font-family: var(--font-mono); font-weight: 700; font-size: 0.88rem; cursor: pointer;" onclick="openEditBotModal('${escapeHtml(bot.bot_id)}')">🤖 ${escapeHtml(bot.bot_id)}</span>
+                            <span class="show-on-mobile-inline" onclick="openEditBotModal('${escapeHtml(bot.bot_id)}')" style="font-weight: 600; color: #ffffff; cursor: pointer; text-decoration: underline dotted rgba(167, 139, 250, 0.65); text-underline-offset: 3px;" title="Boto nustatymai ⚙️">${escapeHtml(bot.name || bot.bot_id)}</span>
+                        </div>
+                        <div class="show-on-mobile-inline" style="width: 100%;">${descSub}</div>
                     </td>
-                    <td>
-                        <div style="font-weight: 600; color: #ffffff;">${escapeHtml(bot.name || bot.bot_id)}</div>
+                    <td class="hide-on-mobile" data-label="Pavadinimas">
+                        <div onclick="openEditBotModal('${escapeHtml(bot.bot_id)}')" style="font-weight: 600; color: #ffffff; cursor: pointer; text-decoration: underline dotted rgba(167, 139, 250, 0.65); text-underline-offset: 3px;">${escapeHtml(bot.name || bot.bot_id)} <span style="font-size: 0.72rem; opacity: 0.75;">⚙️</span></div>
                         ${descSub}
                     </td>
-                    <td>${pkHtml}</td>
-                    <td>${statusBadge}</td>
-                    <td>${scheduleHtml}</td>
-                    <td>${coordsHtml}</td>
-                    <td>${nodesBadge}</td>
-                    <td>${lastSeen}</td>
-                    <td style="text-align: right; white-space: nowrap;">
-                        <button type="button" class="btn btn-secondary btn-sm" onclick="openEditBotModal('${escapeHtml(bot.bot_id)}')" title="Redaguoti boto nustatymus">
-                            ✏️ Redaguoti
-                        </button>
-                        <button type="button" class="btn btn-danger btn-sm" onclick="deleteBot('${escapeHtml(bot.bot_id)}', '${escapeHtml(bot.name || bot.bot_id)}')" title="Ištrinti botą">
-                            🗑️
-                        </button>
+                    <td data-label="Viešasis Raktas">${pkHtml}</td>
+                    <td data-label="Būsena">${statusBadge}</td>
+                    <td data-label="Apklausos Grafikas">${scheduleHtml}</td>
+                    <td data-label="GPS Koordinatės">${coordsHtml}</td>
+                    <td data-label="Priskirti Mazgai">${nodesBadge}</td>
+                    <td data-label="Matytas (LT)">${lastSeen}</td>
+                    <td class="cell-actions" style="text-align: right; white-space: nowrap;">
+                        <div class="action-btn-group">
+                            <button type="button" class="btn btn-secondary btn-icon" onclick="openEditBotModal('${escapeHtml(bot.bot_id)}')" title="Boto nustatymai (⚙️)">⚙️</button>
+                            ${isEnabled ? `
+                                <button type="button" class="btn btn-secondary btn-icon" style="color: #ff6b81;" onclick="quickToggleBot('${escapeHtml(bot.bot_id)}', false)" title="Išjungti botą (⏸️)">⏸️</button>
+                            ` : `
+                                <button type="button" class="btn btn-secondary btn-icon" style="color: #2ed573;" onclick="quickToggleBot('${escapeHtml(bot.bot_id)}', true)" title="Įjungti botą (▶️)">▶️</button>
+                            `}
+                            <button type="button" class="btn btn-secondary btn-icon" onclick="filterNodesByBot('${escapeHtml(bot.bot_id)}')" title="Rodyti šiam botui priskirtus mazgus (🎯)">🎯</button>
+                            <button type="button" class="btn btn-danger btn-icon" onclick="deleteBot('${escapeHtml(bot.bot_id)}', '${escapeHtml(bot.name || bot.bot_id)}')" title="Ištrinti botą (🗑️)">🗑️</button>
+                        </div>
                     </td>
                 </tr>`;
             });
@@ -3516,11 +3976,12 @@ $isLoggedIn = isAdminLoggedIn();
                 const updatedAgo = r.recorded_at ? formatRelativeTime(r.recorded_at) : '-';
                 const displayName = r.node_name || r.node_id;
                 const editKey = r.public_key || r.node_id || '';
+                const nodeFilterId = r.node_id || (r.public_key ? r.public_key.substring(0, 4) : '');
 
                 return `
                     <tr>
-                        <td style="font-family: var(--font-mono); font-size: 0.72rem;">#${r.id}</td>
-                        <td>
+                        <td data-label="Įrašo ID" style="font-family: var(--font-mono); font-size: 0.72rem;">#${r.id}</td>
+                        <td class="cell-primary" data-label="Mazgas">
                             <div onclick="openEditNode('${escapeHtml(editKey)}')" style="cursor: pointer; display: inline-block;" title="Paspauskite, kad atidarytumėte mazgo „${escapeHtml(displayName)}“ nustatymus ⚙️">
                                 <div style="font-weight: 600; color: #ffffff; text-decoration: underline dotted rgba(167, 139, 250, 0.65); text-underline-offset: 3px;">
                                     ${escapeHtml(displayName)} <span style="font-size: 0.72rem; opacity: 0.75;">⚙️</span>
@@ -3532,25 +3993,33 @@ $isLoggedIn = isAdminLoggedIn();
                                 ` : ''}
                             </div>
                         </td>
-                        <td><span class="badge badge-gray">${escapeHtml(r.type)}</span></td>
-                        <td><span style="color:#2ed573; font-family:var(--font-mono); font-weight:600;">${batt}</span></td>
-                        <td><span style="color:var(--accent-orange); font-family:var(--font-mono);">${temp}</span></td>
-                        <td style="font-family: var(--font-mono); font-size: 0.74rem;">
+                        <td data-label="Tipas"><span class="badge badge-gray">${escapeHtml(r.type)}</span></td>
+                        <td data-label="Baterija"><span style="color:#2ed573; font-family:var(--font-mono); font-weight:600;">${batt}</span></td>
+                        <td data-label="Temperatūra"><span style="color:var(--accent-orange); font-family:var(--font-mono);">${temp}</span></td>
+                        <td data-label="Signalo Kokybė" style="font-family: var(--font-mono); font-size: 0.74rem;">
                             ${r.rssi ? `RSSI: ${r.rssi} dBm ` : ''}
-                            ${r.snr ? `SNR: ${r.snr} dB` : ''}
+                            ${r.snr ? `SNR: ${r.snr} dB` : (!r.rssi ? '-' : '')}
                         </td>
-                        <td style="color: var(--accent-cyan); font-weight: 500; font-size: 0.76rem;" title="${r.recorded_at ? formatVilniusDate(r.recorded_at) : ''}">${updatedAgo}</td>
-                        <td style="font-family: var(--font-mono); font-size: 0.74rem;">
+                        <td data-label="Atnaujinta Prieš" style="color: var(--accent-cyan); font-weight: 500; font-size: 0.76rem;" title="${r.recorded_at ? formatVilniusDate(r.recorded_at) : ''}">${updatedAgo}</td>
+                        <td data-label="Paketai RX/TX" style="font-family: var(--font-mono); font-size: 0.74rem;">
                             RX: ${r.packets_recv ?? '-'} / TX: ${r.packets_sent ?? '-'}
                         </td>
-                        <td style="font-size: 0.74rem;">
+                        <td data-label="Užregistruota (LT)" style="font-size: 0.74rem;">
                             <span title="Lietuvos laiku: ${formatVilniusDate(r.recorded_at)}">${formatVilniusDate(r.recorded_at)}</span>
                         </td>
-                        <td style="text-align: right; white-space: nowrap;">
-                            ${r.raw_packet_id ? `
-                                <button class="btn btn-success btn-sm" onclick="copyDebugInfo(${r.raw_packet_id})" title="Nukopijuoti RAW paketo derinimo duomenis į iškarpinę">📋 Debug</button>
-                                <button class="btn btn-secondary btn-sm" onclick="inspectPacket(${r.raw_packet_id})">RAW #${r.raw_packet_id}</button>
-                            ` : '-'}
+                        <td class="cell-actions" style="text-align: right; white-space: nowrap;">
+                            <div class="action-btn-group">
+                                ${editKey ? `
+                                    <button type="button" class="btn btn-secondary btn-icon" onclick="openEditNode('${escapeHtml(editKey)}')" title="Mazgo nustatymai (⚙️)">⚙️</button>
+                                ` : ''}
+                                ${nodeFilterId ? `
+                                    <button type="button" class="btn btn-secondary btn-icon" onclick="filterRawByNode('${escapeHtml(nodeFilterId)}')" title="Mazgo RAW paketai (📦)">📦</button>
+                                ` : ''}
+                                ${r.raw_packet_id ? `
+                                    <button type="button" class="btn btn-secondary btn-icon" onclick="inspectPacket(${r.raw_packet_id})" title="Peržiūrėti RAW paketą #${r.raw_packet_id} (🔍)">🔍</button>
+                                    <button type="button" class="btn btn-success btn-icon" onclick="copyDebugInfo(${r.raw_packet_id})" title="Kopijuoti RAW paketo #${r.raw_packet_id} derinimo duomenis (📋)">📋</button>
+                                ` : ''}
+                            </div>
                         </td>
                     </tr>
                 `;
@@ -3567,9 +4036,10 @@ $isLoggedIn = isAdminLoggedIn();
             document.getElementById('rawNodeFilterTag').style.display = 'inline-flex';
             
             currentTab = 'raw';
-            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-btn, .mobile-nav-item').forEach(b => b.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
             document.getElementById('tabBtn-raw')?.classList.add('active');
+            document.getElementById('mTabBtn-raw')?.classList.add('active');
             document.getElementById('tab-raw')?.classList.add('active');
 
             updateHistory({ tab: 'raw', search: nodeId, page: 0, packet: null }, 'push');
@@ -3711,13 +4181,21 @@ $isLoggedIn = isAdminLoggedIn();
                     : (p.target_name && p.target_node_name && p.target_name !== p.target_node_name ? p.target_name : '');
                 const targetEditKey = p.target_public_key || (p.target_name && p.target_name !== '-' ? p.target_name : '');
 
+                const primaryEditKey = senderEditKey || targetEditKey || '';
+
                 return `
                     <tr>
-                        <td style="font-family: var(--font-mono); font-size: 0.72rem;">#${p.id}</td>
-                        <td><span class="badge badge-purple" style="font-size:0.7rem;">${escapeHtml(p.bot_id || 'KLP')}</span></td>
-                        <td>${dirBadge}</td>
-                        <td>${typeBadge}</td>
-                        <td>
+                        <td class="cell-primary" data-label="Paketo ID" style="font-family: var(--font-mono); font-size: 0.76rem;">
+                            <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                                <span style="font-weight: 700; color: #ffffff; cursor: pointer;" onclick="inspectPacket(${p.id})">#${p.id}</span>
+                                <span class="badge badge-purple show-on-mobile-inline" style="font-size:0.7rem;">🤖 ${escapeHtml(p.bot_id || 'KLP')}</span>
+                                <span class="show-on-mobile-inline">${dirBadge}</span>
+                            </div>
+                        </td>
+                        <td class="hide-on-mobile" data-label="Botas"><span class="badge badge-purple" style="font-size:0.7rem;">🤖 ${escapeHtml(p.bot_id || 'KLP')}</span></td>
+                        <td class="hide-on-mobile" data-label="Kryptis">${dirBadge}</td>
+                        <td data-label="Tipas">${typeBadge}</td>
+                        <td data-label="Siuntėjas">
                             ${senderEditKey ? `
                                 <div onclick="openEditNode('${escapeHtml(senderEditKey)}')" style="cursor: pointer; display: inline-block;" title="Paspauskite, kad atidarytumėte mazgo „${escapeHtml(senderName)}“ nustatymus ⚙️">
                                     <div style="font-weight: 600; color: #ffffff; text-decoration: underline dotted rgba(167, 139, 250, 0.65); text-underline-offset: 3px;">
@@ -3729,7 +4207,7 @@ $isLoggedIn = isAdminLoggedIn();
                                 <div style="font-weight: 600; color: var(--text-dim);">-</div>
                             `}
                         </td>
-                        <td>
+                        <td data-label="Taikinys">
                             ${targetEditKey ? `
                                 <div onclick="openEditNode('${escapeHtml(targetEditKey)}')" style="cursor: pointer; display: inline-block;" title="Paspauskite, kad atidarytumėte mazgo „${escapeHtml(targetName)}“ nustatymus ⚙️">
                                     <div style="font-weight: 600; color: #ffffff; text-decoration: underline dotted rgba(167, 139, 250, 0.65); text-underline-offset: 3px;">
@@ -3741,19 +4219,24 @@ $isLoggedIn = isAdminLoggedIn();
                                 <div style="font-weight: 600; color: var(--text-dim);">-</div>
                             `}
                         </td>
-                        <td style="font-family: var(--font-mono); font-size: 0.72rem;">
+                        <td data-label="Ilgis / Radijas" style="font-family: var(--font-mono); font-size: 0.72rem;">
                             ${p.length ? p.length + ' B' : '-'} 
                             ${p.rssi ? `| ${p.rssi} dBm` : ''}
                         </td>
-                        <td>${statusBadge}</td>
-                        <td>
+                        <td data-label="Būsena">${statusBadge}</td>
+                        <td data-label="Klaida">
                             ${p.error_message ? `<span style="color:#ff6b81; font-size:0.75rem;" title="${escapeHtml(p.error_message)}">${escapeHtml(p.error_message.substring(0, 45))}...</span>` : '<span style="color:var(--text-dim);">-</span>'}
                         </td>
-                        <td style="font-size: 0.74rem;" title="Lietuvos laiku: ${formatVilniusDate(p.created_at)}">${formatVilniusDate(p.created_at)}</td>
-                        <td style="text-align: right; white-space: nowrap;">
-                            <button class="btn btn-success btn-sm" onclick="copyDebugInfo(${p.id})" title="Nukopijuoti visą paketo procesą ir duomenis derinimui su AI / Dev">📋 Kopijuoti derinimui</button>
-                            <button class="btn btn-secondary btn-sm" onclick="inspectPacket(${p.id})">🔍 Peržiūrėti</button>
-                            <button class="btn btn-secondary btn-sm" onclick="reprocessPacket(${p.id})">🔄 Reprocess</button>
+                        <td data-label="Gauta Data (LT)" style="font-size: 0.74rem;" title="Lietuvos laiku: ${formatVilniusDate(p.created_at)}">${formatVilniusDate(p.created_at)}</td>
+                        <td class="cell-actions" style="text-align: right; white-space: nowrap;">
+                            <div class="action-btn-group">
+                                ${primaryEditKey ? `
+                                    <button type="button" class="btn btn-secondary btn-icon" onclick="openEditNode('${escapeHtml(primaryEditKey)}')" title="Mazgo nustatymai (⚙️)">⚙️</button>
+                                ` : ''}
+                                <button type="button" class="btn btn-secondary btn-icon" onclick="inspectPacket(${p.id})" title="Peržiūrėti RAW paketą #${p.id} (🔍)">🔍</button>
+                                <button type="button" class="btn btn-success btn-icon" onclick="copyDebugInfo(${p.id})" title="Kopijuoti paketo #${p.id} derinimo duomenis AI / Dev (📋)">📋</button>
+                                <button type="button" class="btn btn-secondary btn-icon" onclick="reprocessPacket(${p.id})" title="Pakartoti iškodavimą / Reprocess (🔄)">🔄</button>
+                            </div>
                         </td>
                     </tr>
                 `;
@@ -4378,12 +4861,12 @@ $isLoggedIn = isAdminLoggedIn();
 
                 return `
                     <tr style="${isBlocked ? 'background: rgba(232, 65, 24, 0.08);' : (isRateLimited ? 'background: rgba(255, 177, 66, 0.05);' : (isNext ? 'background: rgba(0, 210, 255, 0.04);' : ''))}">
-                        <td style="text-align: center;">
+                        <td data-label="Eilės Pozicija" style="text-align: center;">
                             <span class="badge ${posBadgeClass}" style="font-weight: 700; white-space: nowrap;" title="${escapeHtml(posTitle)}">
                                 ${posLabel}
                             </span>
                         </td>
-                        <td>
+                        <td class="cell-primary" data-label="Mazgas">
                             <div style="display: flex; flex-direction: column; gap: 2px;">
                                 <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
                                     <span onclick="openEditNode('${escapeHtml(item.public_key || nodeIdentifier)}')" style="font-weight: 600; color: #ffffff; font-size: 0.88rem; cursor: pointer; text-decoration: underline dotted rgba(167, 139, 250, 0.65); text-underline-offset: 3px;" title="Paspauskite, kad atidarytumėte mazgo nustatymus ⚙️">${nameStr} <span style="font-size: 0.72rem; opacity: 0.75;">⚙️</span></span>
@@ -4407,50 +4890,48 @@ $isLoggedIn = isAdminLoggedIn();
                                 </div>
                             </div>
                         </td>
-                        <td>
+                        <td data-label="Šaltinis (Botas)">
                             <span class="badge badge-purple" title="ESP32 Bot šaltinis">
                                 🤖 ${botStr}
                             </span>
                         </td>
-                        <td>
+                        <td data-label="Paskutinė Užklausa">
                             ${reqHtml}
                         </td>
-                        <td>
+                        <td data-label="Bandymo Rezultatas">
                             ${attemptBadge}
                         </td>
-                        <td>
+                        <td data-label="Telemetrija">
                             ${telemetryHtml}
                         </td>
-                        <td style="text-align: right; white-space: nowrap;">
-                            <button type="button" class="btn btn-secondary btn-icon" 
-                                onclick="resetSingleRequestedDate('${escapeHtml(nodeIdentifier)}', '${safeName}')"
-                                title="Nustatyti į eilės pradžią (requested_date = NULL, fail = 0)">
-                                🔄
-                            </button>
-                            ${failCount > 0 ? `
-                                <button type="button" class="btn btn-secondary btn-icon" style="margin-left: 3px; color: ${isBlocked ? '#ff6b81' : 'inherit'}; border-color: ${isBlocked ? '#ff6b81' : ''};" 
-                                    onclick="resetNodeFailCount('${escapeHtml(nodeIdentifier)}', '${safeName}')" 
-                                    title="Nuresetinti nesėkmingų bandymų (fail) skaičių į 0 (${failCount} fail)">
-                                    🧹
-                                </button>
-                            ` : ''}
-                            <button type="button" class="btn btn-secondary btn-icon" style="margin-left: 3px;"
-                                onclick="filterTelemetryByNode('${nodeFilterId}')" 
-                                title="Rodyti telemetrijos įrašus">
-                                📊
-                            </button>
-                            <button type="button" class="btn btn-secondary btn-icon" style="margin-left: 3px;"
-                                onclick="filterRawByNode('${nodeFilterId}')" 
-                                title="Rodyti RAW paketus">
-                                📦
-                            </button>
-                            ${item.public_key ? `
-                                <button type="button" class="btn btn-secondary btn-icon" style="margin-left: 3px;"
-                                    onclick="openEditNode('${escapeHtml(item.public_key)}')"
-                                    title="Redaguoti mazgo nustatymus">
+                        <td class="cell-actions" style="text-align: right; white-space: nowrap;">
+                            <div class="action-btn-group">
+                                <button type="button" class="btn btn-secondary btn-icon"
+                                    onclick="openEditNode('${escapeHtml(item.public_key || nodeIdentifier)}')"
+                                    title="Mazgo nustatymai (⚙️)">
                                     ⚙️
                                 </button>
-                            ` : ''}
+                                <button type="button" class="btn btn-secondary btn-icon" 
+                                    onclick="resetSingleRequestedDate('${escapeHtml(nodeIdentifier)}', '${safeName}')"
+                                    title="Nukreipti į eilės pradžią: requested_date = NULL, fail = 0 (⚡)">
+                                    ⚡
+                                </button>
+                                <button type="button" class="btn btn-secondary btn-icon" style="${failCount > 0 ? 'color: #ff6b81; border-color: #ff6b81;' : ''}" 
+                                    onclick="resetNodeFailCount('${escapeHtml(nodeIdentifier)}', '${safeName}')" 
+                                    title="Nuresetinti nesėkmingų bandymų (fail=${failCount}) skaičių į 0 (🧹)">
+                                    🧹
+                                </button>
+                                <button type="button" class="btn btn-secondary btn-icon"
+                                    onclick="filterTelemetryByNode('${nodeFilterId}')" 
+                                    title="Mazgo telemetrijos įrašai (📊)">
+                                    📊
+                                </button>
+                                <button type="button" class="btn btn-secondary btn-icon"
+                                    onclick="filterRawByNode('${nodeFilterId}')" 
+                                    title="Mazgo RAW paketai (📦)">
+                                    📦
+                                </button>
+                            </div>
                         </td>
                     </tr>
                 `;
@@ -5191,11 +5672,11 @@ $isLoggedIn = isAdminLoggedIn();
 
                 return `
                     <tr style="${statusCode >= 400 ? 'background: rgba(220, 53, 69, 0.06);' : (isSuspicious ? 'background: rgba(255, 193, 7, 0.04);' : '')}">
-                        <td style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-muted);">#${row.id}</td>
-                        <td style="font-family: var(--font-mono); font-size: 0.74rem; white-space: nowrap;">
+                        <td data-label="Užklausos ID" style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-muted);">#${row.id}</td>
+                        <td data-label="Laikas (LT)" style="font-family: var(--font-mono); font-size: 0.74rem; white-space: nowrap;">
                             ${formatVilniusDate(row.created_at)}
                         </td>
-                        <td>
+                        <td data-label="IP Adresas">
                             <span
                                 onclick="filterApiLogsByIp('${escapeHtml(row.ip_address || '')}')"
                                 style="font-family: var(--font-mono); font-size: 0.8rem; font-weight: 700; color: var(--accent-cyan); cursor: pointer; text-decoration: underline dotted;"
@@ -5203,7 +5684,7 @@ $isLoggedIn = isAdminLoggedIn();
                                 ${escapeHtml(row.ip_address || '-')}
                             </span>
                         </td>
-                        <td style="max-width: 280px;">
+                        <td data-label="Klientas" style="max-width: 280px;">
                             <div style="display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-bottom: 3px;">
                                 ${getClientTypeBadge(row.client_type, row.bot_id)}
                             </div>
@@ -5211,7 +5692,7 @@ $isLoggedIn = isAdminLoggedIn();
                                 ${uaShort}
                             </div>
                         </td>
-                        <td style="max-width: 250px;">
+                        <td class="cell-primary" data-label="Endpointas" style="max-width: 250px;">
                             <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 2px;">
                                 <span class="badge ${methodBadgeClass}" style="font-size: 0.68rem;">${escapeHtml(row.method || 'GET')}</span>
                                 <strong style="font-family: var(--font-mono); font-size: 0.78rem; color: #ffffff;">${escapeHtml(row.endpoint || '')}</strong>
@@ -5220,7 +5701,7 @@ $isLoggedIn = isAdminLoggedIn();
                                 ${escapeHtml(row.request_uri || '')}
                             </div>
                         </td>
-                        <td style="white-space: nowrap;">
+                        <td data-label="Statusas / Trukmė" style="white-space: nowrap;">
                             <span class="badge ${statusBadgeClass}">${statusCode}</span>
                             <span style="font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-muted); margin-left: 4px;">
                                 ${row.duration_ms !== null && row.duration_ms !== undefined ? row.duration_ms + ' ms' : ''}
@@ -5229,14 +5710,17 @@ $isLoggedIn = isAdminLoggedIn();
                                 📦 ${formatBytes(row.response_size)}
                             </div>
                         </td>
-                        <td style="max-width: 310px;">
+                        <td data-label="Atsakymas" style="max-width: 310px;">
                             ${reqShort ? `<div style="font-family: var(--font-mono); font-size: 0.68rem; color: #c084fc; margin-bottom: 2px;" title="POST Body">📥 ${reqShort}</div>` : ''}
                             <div style="font-family: var(--font-mono); font-size: 0.71rem; color: var(--text-secondary); word-break: break-all; cursor: pointer;" onclick="inspectApiLog(${row.id})" title="Paspauskite, kad peržiūrėtumėte pilną JSON atsakymą">
                                 📤 ${respShort || '<span style="color:var(--text-dim);">(tuščia)</span>'}
                             </div>
                         </td>
-                        <td style="text-align: right; white-space: nowrap;">
-                            <button class="btn btn-secondary btn-sm" onclick="inspectApiLog(${row.id})">🔍 Detaliau</button>
+                        <td class="cell-actions" style="text-align: right; white-space: nowrap;">
+                            <div class="action-btn-group">
+                                <button type="button" class="btn btn-secondary btn-icon" onclick="filterApiLogsByIp('${escapeHtml(row.ip_address || '')}')" title="Filtruoti visas užklausas iš šio IP (${escapeHtml(row.ip_address || '')}) (🎯)">🎯</button>
+                                <button type="button" class="btn btn-secondary btn-icon" onclick="inspectApiLog(${row.id})" title="Peržiūrėti pilną API užklausos ir atsakymo informaciją (🔍)">🔍</button>
+                            </div>
                         </td>
                     </tr>
                 `;

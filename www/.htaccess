@@ -6,6 +6,9 @@ DirectoryIndex index.html index.php
     # Peradresuoti pasenusį /api/api/* į /api/* (301 Permanent Redirect)
     RewriteRule ^api/api/(.*)$ /api/$1 [R=301,L,QSA]
 
+    # Visus alternatyvius admin kelius (/public/admin, /api/public/admin) nukreipti į vienintelį /api/admin/
+    RewriteRule ^(api/)?public/admin(/.*)?$ /api/admin/ [R=301,L,QSA]
+
     # Nukreipti /api/node/{key} ir /node/{key} į /api/node/index.php failą
     RewriteRule ^api/node/(.+)$ /api/node/index.php?subpath=$1 [L,QSA]
     RewriteRule ^node/(.+)$ /api/node/index.php?subpath=$1 [L,QSA]
