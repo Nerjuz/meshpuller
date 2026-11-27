@@ -711,60 +711,67 @@
         }
 
         .marker-bubble {
-            background: var(--bg-card);
-            border: 1.5px solid var(--accent-cyan);
-            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6), 0 0 10px rgba(0, 210, 255, 0.25);
-            border-radius: var(--radius-sm);
-            padding: 4px 8px;
+            background: rgba(15, 23, 38, 0.92);
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            border: 1px solid rgba(59, 89, 138, 0.55);
+            box-shadow: 0 3px 12px rgba(0, 0, 0, 0.72), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+            border-radius: 7px;
+            padding: 4px 9px 4px 8px;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            gap: 3px;
+            gap: 2px;
             font-family: var(--font-sans);
             cursor: pointer;
-            transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+            transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+            white-space: nowrap;
         }
 
         .marker-bubble:hover {
-            transform: scale(1.06) translateY(-2px);
-            box-shadow: 0 6px 18px rgba(0, 210, 255, 0.45);
+            background: rgba(20, 31, 52, 0.98);
+            border-color: rgba(0, 210, 255, 0.75);
+            transform: scale(1.05) translateY(-2px);
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.8), 0 0 12px rgba(0, 210, 255, 0.3);
         }
 
         /* Telemetrijos senumo rėmeliai žemėlapyje:
            > 24h -> oranžinis apvadas
            > 48h -> raudonas apvadas
-           <= 24h -> mėlynas apvadas (dabartinis / numatytasis) */
+           <= 24h -> CoreScope tamsiai mėlynas apvadas */
         .marker-bubble.border-orange {
-            border-color: #ff9f43 !important;
-            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6), 0 0 10px rgba(255, 159, 67, 0.35) !important;
+            border-color: rgba(234, 179, 8, 0.65) !important;
+            box-shadow: 0 3px 12px rgba(0, 0, 0, 0.72), 0 0 8px rgba(234, 179, 8, 0.22) !important;
         }
         .marker-bubble.border-orange:hover {
-            box-shadow: 0 6px 18px rgba(255, 159, 67, 0.6) !important;
+            border-color: #eab308 !important;
+            box-shadow: 0 6px 18px rgba(234, 179, 8, 0.45) !important;
         }
         .custom-mesh-marker.border-orange .marker-pin-dot {
-            background: #ff9f43 !important;
-            box-shadow: 0 0 8px #ff9f43 !important;
+            background: #eab308 !important;
+            box-shadow: 0 0 7px #eab308 !important;
         }
         .mesh-marker-container.popup-open .custom-mesh-marker.border-orange .marker-pin-dot {
-            background: #ff9f43 !important;
-            box-shadow: 0 0 12px #ff9f43 !important;
+            background: #eab308 !important;
+            box-shadow: 0 0 12px #eab308 !important;
         }
 
         .marker-bubble.border-red {
-            border-color: #ff4757 !important;
-            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6), 0 0 10px rgba(255, 71, 87, 0.35) !important;
+            border-color: rgba(239, 68, 68, 0.55) !important;
+            box-shadow: 0 3px 12px rgba(0, 0, 0, 0.72), 0 0 8px rgba(239, 68, 68, 0.2) !important;
         }
         .marker-bubble.border-red:hover {
-            box-shadow: 0 6px 18px rgba(255, 71, 87, 0.6) !important;
+            border-color: #ef4444 !important;
+            box-shadow: 0 6px 18px rgba(239, 68, 68, 0.45) !important;
         }
         .custom-mesh-marker.border-red .marker-pin-dot {
-            background: #ff4757 !important;
-            box-shadow: 0 0 8px #ff4757 !important;
+            background: #ef4444 !important;
+            box-shadow: 0 0 7px #ef4444 !important;
         }
         .mesh-marker-container.popup-open .custom-mesh-marker.border-red .marker-pin-dot {
-            background: #ff4757 !important;
-            box-shadow: 0 0 12px #ff4757 !important;
+            background: #ef4444 !important;
+            box-shadow: 0 0 12px #ef4444 !important;
         }
 
         .node-item-card.border-orange {
@@ -951,7 +958,78 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 4px;
+            gap: 5px;
+            line-height: 1.15;
+        }
+
+        .cs-status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            display: inline-block;
+        }
+
+        .cs-status-dot.dot-green {
+            background: #22c55e;
+            box-shadow: 0 0 6px rgba(34, 197, 94, 0.75);
+        }
+
+        .cs-status-dot.dot-green-dim {
+            background: #16a34a;
+            opacity: 0.75;
+        }
+
+        .cs-status-dot.dot-yellow {
+            background: #eab308;
+            box-shadow: 0 0 6px rgba(234, 179, 8, 0.75);
+        }
+
+        .cs-status-dot.dot-red {
+            background: #ef4444;
+            box-shadow: 0 0 6px rgba(239, 68, 68, 0.75);
+        }
+
+        .cs-metric-group {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+            font-family: var(--font-mono);
+            font-size: 0.73rem;
+            white-space: nowrap;
+        }
+
+        .cs-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .cs-batt-pct {
+            color: #ffffff;
+            font-weight: 700;
+            letter-spacing: -0.01em;
+        }
+
+        .cs-batt-volt {
+            color: #8fa6c4;
+            font-weight: 500;
+            font-size: 0.71rem;
+            margin-left: 1px;
+        }
+
+        .cs-temp-val {
+            color: #ffffff;
+            font-weight: 700;
+        }
+
+        .cs-age-val {
+            color: #7c93b2;
+            font-family: var(--font-mono);
+            font-size: 0.69rem;
+            font-weight: 500;
+            margin-left: 1px;
         }
 
         .marker-name-row {
@@ -959,33 +1037,33 @@
             align-items: center;
             justify-content: center;
             width: 100%;
+            padding-top: 1px;
+        }
+
+        .marker-top-metrics + .marker-name-row {
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            margin-top: 1px;
+            padding-top: 2px;
         }
 
         .marker-name {
-            font-weight: 700;
-            font-size: 0.76rem;
-            color: #ffffff;
+            font-weight: 600;
+            font-size: 0.69rem;
+            color: #cbd5e1;
             text-align: center;
             white-space: nowrap;
-        }
-
-        .marker-pill {
-            font-family: var(--font-mono);
-            font-size: 0.68rem;
-            font-weight: 700;
-            padding: 1px 5px;
-            border-radius: var(--radius-sm);
-            white-space: nowrap;
+            letter-spacing: 0.01em;
+            line-height: 1.15;
         }
 
         .marker-pin-dot {
-            width: 9px;
-            height: 9px;
-            background: var(--accent-cyan);
-            border: 2px solid #ffffff;
+            width: 7px;
+            height: 7px;
+            background: #22c55e;
+            border: 1.5px solid #ffffff;
             border-radius: 50%;
             margin-top: 2px;
-            box-shadow: 0 0 8px var(--accent-cyan);
+            box-shadow: 0 0 6px rgba(34, 197, 94, 0.8);
             transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
         }
 
@@ -3366,6 +3444,67 @@
             }
         }
 
+        // Baterijos procentų skaičiavimas iš įtampos (pagal CoreScope Li-Ion kreivę: 4.14V->94%, 4.08V->88%, 4.04V->84%, 4.02V->81%, 3.96V->73%, 3.83V->56%)
+        function getBatteryPercentage(volts) {
+            if (volts === null || volts === undefined) return null;
+            const v = parseFloat(volts);
+            if (isNaN(v)) return null;
+            if (v >= 4.20) return 100;
+            if (v <= 3.30) return 0;
+            let pct;
+            if (v >= 4.04) {
+                pct = 84 + ((v - 4.04) / (4.20 - 4.04)) * 16;
+            } else if (v >= 3.83) {
+                pct = 56 + ((v - 3.83) / (4.04 - 3.83)) * 28;
+            } else {
+                pct = ((v - 3.30) / (3.83 - 3.30)) * 56;
+            }
+            return Math.max(0, Math.min(100, Math.round(pct)));
+        }
+
+        // CoreScope stiliaus vertikalios baterijos SVG ikona
+        function getCoreScopeBatterySvg(pct, volts) {
+            const v = volts !== null && volts !== undefined ? parseFloat(volts) : 0;
+            let color = '#22c55e'; // žalia
+            if (v > 0 && v < 3.65) color = '#ef4444'; // raudona
+            else if (v > 0 && v < 3.88) color = '#eab308'; // geltona
+            const p = pct !== null ? pct : 50;
+            const fillH = Math.max(2, Math.min(9, Math.round((p / 100) * 9)));
+            const fillY = 12 - fillH;
+            return `<svg width="9" height="14" viewBox="0 0 10 15" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:block;">
+                <rect x="3" y="0.5" width="4" height="1.5" rx="0.5" fill="${color}"/>
+                <rect x="1" y="2" width="8" height="11.5" rx="1.5" stroke="${color}" stroke-width="1.3"/>
+                <rect x="2.3" y="${fillY}" width="5.4" height="${fillH}" rx="0.6" fill="${color}"/>
+            </svg>`;
+        }
+
+        // CoreScope stiliaus termometro SVG ikona
+        function getCoreScopeThermoSvg() {
+            return `<svg width="8" height="13" viewBox="0 0 10 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:block;">
+                <path d="M6.5 9.2V3C6.5 2.17 5.83 1.5 5 1.5C4.17 1.5 3.5 2.17 3.5 3V9.2C2.58 9.75 2 10.76 2 11.9C2 13.61 3.34 15 5 15C6.66 15 8 13.61 8 11.9C8 10.76 7.42 9.75 6.5 9.2Z" stroke="#cbd5e1" stroke-width="1.3"/>
+                <circle cx="5" cy="11.9" r="1.6" fill="#cbd5e1"/>
+                <rect x="4.4" y="5" width="1.2" height="5.5" rx="0.6" fill="#cbd5e1"/>
+            </svg>`;
+        }
+
+        // Trumpas laiko formatas žemėlapio žymekliui (pvz. "8m", "55m", "1h", "27h", "3d")
+        function formatCompactAge(dateStr) {
+            if (!dateStr) return '';
+            try {
+                const d = parseToLithuanianDate(dateStr);
+                if (!d || isNaN(d.getTime())) return '';
+                const diffSec = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000));
+                if (diffSec < 60) return `${diffSec}s`;
+                const mins = Math.floor(diffSec / 60);
+                if (mins < 60) return `${mins}m`;
+                const hours = Math.floor(diffSec / 3600);
+                if (hours < 72) return `${hours}h`;
+                return `${Math.floor(diffSec / 86400)}d`;
+            } catch (e) {
+                return '';
+            }
+        }
+
         // Baterijos stiliaus nustatymas pagal įtampą
         function getBatteryStyle(volts) {
             if (volts === null || volts === undefined) return { class: '', text: 'N/A' };
@@ -3538,19 +3677,48 @@
                 if (hasValidCoords) {
                     hasCoordinatesCount++;
 
-                    // Custom HTML žymeklis: Baterija ir temperatūra viršuje, mazgo pavadinimas apačioje išcentruotas
+                    // CoreScope stiliaus žymeklis su mazgo pavadinimu po apačia
                     const hasMetrics = (battV !== null || tempC !== null);
+                    const battPct = getBatteryPercentage(battV);
+                    const compactAge = formatCompactAge(telemTime || lastSeen);
+                    const tempRounded = (tempC !== null && tempC !== undefined && !isNaN(parseFloat(tempC)))
+                        ? `${Math.round(parseFloat(tempC))}°`
+                        : null;
+
+                    let dotClass = 'dot-green';
+                    if (nodeColor === 'red' || (battV !== null && parseFloat(battV) < 3.65)) {
+                        dotClass = 'dot-red';
+                    } else if (nodeColor === 'orange') {
+                        dotClass = (battV !== null && parseFloat(battV) >= 3.88) ? 'dot-green-dim' : 'dot-yellow';
+                    } else if (battV !== null && parseFloat(battV) < 3.88) {
+                        dotClass = 'dot-yellow';
+                    }
+
                     const markerHtml = `
                         <div class="custom-mesh-marker ${borderClass}" data-node-id="${nodeId}">
                             <div class="marker-bubble ${borderClass}">
                                 ${hasMetrics ? `
-                                    <div class="marker-top-metrics">
-                                        ${battV !== null ? `<span class="marker-pill metric-pill battery ${battStyle.class}" title="Baterija (atnaujinta: ${formatLithuanianDateTime(telemTime) || 'Nėra'})">🔋 ${battStyle.text}</span>` : ''}
-                                        ${tempC !== null ? `<span class="marker-pill metric-pill temp ${tempStyle.class}" title="Temperatūra (atnaujinta: ${formatLithuanianDateTime(telemTime) || 'Nėra'})">🌡️ ${tempStyle.text}</span>` : ''}
+                                    <div class="marker-top-metrics" title="Atnaujinta: ${formatLithuanianDateTime(telemTime) || 'Nėra'}">
+                                        <span class="cs-status-dot ${dotClass}"></span>
+                                        ${battV !== null ? `
+                                            <span class="cs-metric-group">
+                                                <span class="cs-icon">${getCoreScopeBatterySvg(battPct, battV)}</span>
+                                                <span class="cs-batt-pct">${battPct}%</span>
+                                                <span class="cs-batt-volt">${parseFloat(battV).toFixed(2)}V</span>
+                                            </span>
+                                        ` : ''}
+                                        ${tempRounded !== null ? `
+                                            <span class="cs-metric-group">
+                                                <span class="cs-icon">${getCoreScopeThermoSvg()}</span>
+                                                <span class="cs-temp-val">${tempRounded}</span>
+                                            </span>
+                                        ` : ''}
+                                        ${compactAge ? `<span class="cs-age-val">${compactAge}</span>` : ''}
                                     </div>
                                 ` : (telemTime ? `
-                                    <div class="marker-top-metrics">
-                                        <span class="marker-pill metric-pill" style="color:#a78bfa;" title="Telemetrija gauta (atnaujinta: ${formatLithuanianDateTime(telemTime)})">⏱️ ${formatRelativeTime(telemTime)}</span>
+                                    <div class="marker-top-metrics" title="Telemetrija gauta: ${formatLithuanianDateTime(telemTime)}">
+                                        <span class="cs-status-dot ${dotClass}"></span>
+                                        <span class="cs-age-val">${compactAge}</span>
                                     </div>
                                 ` : '')}
                                 <div class="marker-name-row">
