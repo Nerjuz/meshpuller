@@ -59,6 +59,83 @@ class PollingQueueService implements PollingQueueServiceInterface
     }
 
     /**
+     * Patikrina, ar dabartinė Lietuvos valanda (0..23) patenka į boto aktyvumo langą [startHour..endHour).
+     * Pvz.:
+     * - start=23, end=6 -> aktyvus nuo 23:00 iki 05:59 (per vidurnaktį)
+     * - start=1, end=5  -> aktyvus nuo 01:00 iki 04:59
+     * - jei bent vienas NULL arba start === end -> aktyvus 24/7 (visą parą).
+     */
+    public function isWithinBotActiveHours(?int $startHour, ?int $endHour): bool
+    {
+        if ($startHour === null || $endHour === null || $startHour === $endHour) {
+            return true;
+        }
+        try {
+            $dt = new DateTime('now', new DateTimeZone('Europe/Vilnius'));
+            $currentHour = (int)$dt->format('G');
+        } catch (\Throwable $e) {
+            $currentHour = (int)date('G');
+        }
+
+        if ($startHour < $endHour) {
+            return ($currentHour >= $startHour && $currentHour < $endHour);
+        }
+        // Per vidurnaktį (pvz. nuo 23h iki 6h)
+        return ($currentHour >= $startHour || $currentHour < $endHour);
+    }
+
+    /**
+     * Nuskaito konkretaus boto apklausos politiką: ar įjungtas, ar šiuo metu patenka į darbo valandas,
+     * koks yra jo individualus (arba globalus) telemetrijos intervalas bei pakartotinio bandymo po fail intervalas minutėmis.
+     *
+     * @return array{enabled: bool, within_active_hours: bool, telemetry_interval_mins: int, retry_interval_mins: int, active_hour_start: ?int, active_hour_end: ?int}
+     */
+    public function getBotPollingPolicy(string $botId): array
+    {
+        $globalInterval = (int)$this->getSetting('min_telemetry_interval_mins', 60);
+        $globalRetryInterval = (int)$this->getSetting('min_retry_interval_mins', 60);
+        $cleanBotId = strtoupper(substr(trim($botId), 0, 16));
+        $policy = [
+            'enabled'                 => true,
+            'within_active_hours'     => true,
+            'telemetry_interval_mins' => $globalInterval,
+            'retry_interval_mins'     => $globalRetryInterval,
+            'active_hour_start'       => null,
+            'active_hour_end'         => null,
+        ];
+
+        if (!$this->pdo || $cleanBotId === '') {
+            return $policy;
+        }
+
+        try {
+            $stmt = $this->pdo->prepare("SELECT enabled, telemetry_interval_mins, retry_interval_mins, active_hour_start, active_hour_end FROM bots WHERE UPPER(bot_id) = :b_id LIMIT 1");
+            $stmt->execute([':b_id' => $cleanBotId]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($row) {
+                $policy['enabled'] = !empty($row['enabled']);
+                if (isset($row['telemetry_interval_mins']) && $row['telemetry_interval_mins'] !== null && (int)$row['telemetry_interval_mins'] > 0) {
+                    $policy['telemetry_interval_mins'] = (int)$row['telemetry_interval_mins'];
+                }
+                if (isset($row['retry_interval_mins']) && $row['retry_interval_mins'] !== null && (int)$row['retry_interval_mins'] > 0) {
+                    $policy['retry_interval_mins'] = (int)$row['retry_interval_mins'];
+                }
+                $startH = (isset($row['active_hour_start']) && $row['active_hour_start'] !== null && $row['active_hour_start'] !== '')
+                    ? (int)$row['active_hour_start']
+                    : null;
+                $endH = (isset($row['active_hour_end']) && $row['active_hour_end'] !== null && $row['active_hour_end'] !== '')
+                    ? (int)$row['active_hour_end']
+                    : null;
+                $policy['active_hour_start'] = $startH;
+                $policy['active_hour_end'] = $endH;
+                $policy['within_active_hours'] = $this->isWithinBotActiveHours($startH, $endH);
+            }
+        } catch (\Throwable $e) {}
+
+        return $policy;
+    }
+
+    /**
      * Grąžina SQL sąlygą Lietuvos geolokacijos filtravimui pagal sistemos nustatymus.
      * Jei filtras išjungtas, grąžina null.
      */
@@ -158,17 +235,9 @@ class PollingQueueService implements PollingQueueServiceInterface
         }
 
         $cleanBotId = strtoupper(substr(trim((string)$botId), 0, 16));
-
-        // Patikriname ar šis botas nėra išjungtas (enabled = 0) bots lentelėje
-        if ($this->pdo) {
-            try {
-                $bCheck = $this->pdo->prepare("SELECT enabled FROM bots WHERE UPPER(bot_id) = :b_id LIMIT 1");
-                $bCheck->execute([':b_id' => $cleanBotId]);
-                $bEnabled = $bCheck->fetchColumn();
-                if ($bEnabled !== false && !$bEnabled) {
-                    return []; // Botas išjungtas per administravimo pultą
-                }
-            } catch (\Throwable $e) {}
+        $botPolicy = $this->getBotPollingPolicy($cleanBotId);
+        if (!$botPolicy['enabled'] || !$botPolicy['within_active_hours']) {
+            return []; // Botas išjungtas arba šiuo metu ne jo darbo valandos
         }
 
         $repeaters = [];
@@ -183,16 +252,49 @@ class PollingQueueService implements PollingQueueServiceInterface
                 $failFilterMysql = ($maxFails > 0) ? " AND (COALESCE(`telemetry_fail_count`, 0) < {$maxFails})" : "";
 
                 $sourceRoutingEnabled = (bool)$this->getSetting('enable_source_routing', true);
-                $minIntervalMins = (int)$this->getSetting('min_telemetry_interval_mins', 60);
-                $intervalFilterPgsql = "";
-                $intervalFilterMysql = "";
-                if ($minIntervalMins > 0) {
-                    $intervalFilterPgsql = " AND (telemetry_updated_at IS NULL OR telemetry_updated_at <= (CURRENT_TIMESTAMP - INTERVAL '{$minIntervalMins} minutes'))";
-                    if ($driver === 'sqlite') {
-                        $intervalFilterMysql = " AND (`telemetry_updated_at` IS NULL OR `telemetry_updated_at` <= datetime('now', '-{$minIntervalMins} minutes'))";
-                    } else {
-                        $intervalFilterMysql = " AND (`telemetry_updated_at` IS NULL OR `telemetry_updated_at` <= DATE_SUB(NOW(), INTERVAL {$minIntervalMins} MINUTE))";
-                    }
+                $minIntervalMins = $botPolicy['telemetry_interval_mins'];
+                $retryIntervalMins = $botPolicy['retry_interval_mins'];
+                $successWaitSec = ($minIntervalMins > 0) ? ($minIntervalMins * 60) : 0;
+                $retryWaitSec = ($retryIntervalMins > 0) ? max(180, $retryIntervalMins * 60) : 180;
+
+                $intervalFilterPgsql = " AND (
+                    requested_date IS NULL
+                    OR (
+                        telemetry_updated_at IS NOT NULL
+                        AND telemetry_updated_at >= (requested_date - INTERVAL '30 seconds')
+                        " . ($successWaitSec > 0 ? "AND requested_date <= (CURRENT_TIMESTAMP - INTERVAL '{$successWaitSec} seconds')" : "") . "
+                    )
+                    OR (
+                        (telemetry_updated_at IS NULL OR telemetry_updated_at < (requested_date - INTERVAL '30 seconds'))
+                        AND requested_date <= (CURRENT_TIMESTAMP - INTERVAL '{$retryWaitSec} seconds')
+                    )
+                )";
+                if ($driver === 'sqlite') {
+                    $intervalFilterMysql = " AND (
+                        `requested_date` IS NULL
+                        OR (
+                            `telemetry_updated_at` IS NOT NULL
+                            AND `telemetry_updated_at` >= datetime(`requested_date`, '-30 seconds')
+                            " . ($successWaitSec > 0 ? "AND `requested_date` <= datetime('now', '-{$successWaitSec} seconds')" : "") . "
+                        )
+                        OR (
+                            (`telemetry_updated_at` IS NULL OR `telemetry_updated_at` < datetime(`requested_date`, '-30 seconds'))
+                            AND `requested_date` <= datetime('now', '-{$retryWaitSec} seconds')
+                        )
+                    )";
+                } else {
+                    $intervalFilterMysql = " AND (
+                        `requested_date` IS NULL
+                        OR (
+                            `telemetry_updated_at` IS NOT NULL
+                            AND `telemetry_updated_at` >= DATE_SUB(`requested_date`, INTERVAL 30 SECOND)
+                            " . ($successWaitSec > 0 ? "AND `requested_date` <= DATE_SUB(NOW(), INTERVAL {$successWaitSec} SECOND)" : "") . "
+                        )
+                        OR (
+                            (`telemetry_updated_at` IS NULL OR `telemetry_updated_at` < DATE_SUB(`requested_date`, INTERVAL 30 SECOND))
+                            AND `requested_date` <= DATE_SUB(NOW(), INTERVAL {$retryWaitSec} SECOND)
+                        )
+                    )";
                 }
 
                 $botFilterPgsql = "";
@@ -506,21 +608,15 @@ class PollingQueueService implements PollingQueueServiceInterface
 
         $cleanBotId = strtoupper(substr(trim((string)$botId), 0, 16));
 
-        // Patikriname ar šis botas nėra išjungtas (enabled = 0) bots lentelėje
-        if ($this->pdo) {
-            try {
-                $bCheck = $this->pdo->prepare("SELECT enabled FROM bots WHERE UPPER(bot_id) = :b_id LIMIT 1");
-                $bCheck->execute([':b_id' => $cleanBotId]);
-                $bEnabled = $bCheck->fetchColumn();
-                if ($bEnabled !== false && !$bEnabled) {
-                    return null; // Botas išjungtas per administravimo pultą
-                }
-            } catch (\Throwable $e) {}
-        }
-
         $driver = $this->pdo ? $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME) : null;
         if (!$this->pdo) {
             return null;
+        }
+
+        // Patikriname ar šis botas yra įjungtas ir ar dabartinė valanda patenka į jo aktyvumo langą
+        $botPolicy = $this->getBotPollingPolicy($cleanBotId);
+        if (!$botPolicy['enabled'] || !$botPolicy['within_active_hours']) {
+            return null; // Botas išjungtas arba šiuo metu ne jo nustatytos darbo valandos
         }
 
         $this->syncFailedTelemetryAttempts(180);
@@ -529,41 +625,54 @@ class PollingQueueService implements PollingQueueServiceInterface
         $failFilterPgsql = ($maxFails > 0) ? " AND (COALESCE(telemetry_fail_count, 0) < {$maxFails})" : "";
         $failFilterMysql = ($maxFails > 0) ? " AND (COALESCE(`telemetry_fail_count`, 0) < {$maxFails})" : "";
 
-        $minIntervalMins = (int)$this->getSetting('min_telemetry_interval_mins', 60);
+        $minIntervalMins = $botPolicy['telemetry_interval_mins'];
+        $retryIntervalMins = $botPolicy['retry_interval_mins'];
+        $successWaitSec = ($minIntervalMins > 0) ? ($minIntervalMins * 60) : 180;
+        $retryWaitSec = ($retryIntervalMins > 0) ? max(180, $retryIntervalMins * 60) : 180;
 
-        if ($minIntervalMins > 0) {
-            $timingFilterPgsql = " AND (
-                requested_date IS NULL 
-                OR requested_date <= (CURRENT_TIMESTAMP - INTERVAL '{$minIntervalMins} minutes')
+        // Jei paskutinis bandymas buvo SĖKMINGAS (telemetry_updated_at >= requested_date - 30s),
+        // laukiame pagrindinio telemetrijos intervalo ($successWaitSec).
+        // Jei paskutinis bandymas buvo NESĖKMINGAS (fail/timeout: telemetry_updated_at < requested_date - 30s),
+        // laukiame pakartotinio bandymo po fail intervalo ($retryWaitSec).
+        $timingFilterPgsql = " AND (
+            requested_date IS NULL
+            OR (
+                telemetry_updated_at IS NOT NULL
+                AND telemetry_updated_at >= (requested_date - INTERVAL '30 seconds')
+                AND requested_date <= (CURRENT_TIMESTAMP - INTERVAL '{$successWaitSec} seconds')
+            )
+            OR (
+                (telemetry_updated_at IS NULL OR telemetry_updated_at < (requested_date - INTERVAL '30 seconds'))
+                AND requested_date <= (CURRENT_TIMESTAMP - INTERVAL '{$retryWaitSec} seconds')
+            )
+        )";
+
+        if ($driver === 'sqlite') {
+            $timingFilterMysql = " AND (
+                `requested_date` IS NULL
+                OR (
+                    `telemetry_updated_at` IS NOT NULL
+                    AND `telemetry_updated_at` >= datetime(`requested_date`, '-30 seconds')
+                    AND `requested_date` <= datetime('now', '-{$successWaitSec} seconds')
+                )
+                OR (
+                    (`telemetry_updated_at` IS NULL OR `telemetry_updated_at` < datetime(`requested_date`, '-30 seconds'))
+                    AND `requested_date` <= datetime('now', '-{$retryWaitSec} seconds')
+                )
             )";
-
-            if ($driver === 'sqlite') {
-                $timingFilterMysql = " AND (
-                    `requested_date` IS NULL 
-                    OR `requested_date` <= datetime('now', '-{$minIntervalMins} minutes')
-                )";
-            } else {
-                $timingFilterMysql = " AND (
-                    `requested_date` IS NULL 
-                    OR `requested_date` <= DATE_SUB(NOW(), INTERVAL {$minIntervalMins} MINUTE)
-                )";
-            }
         } else {
-            $timingFilterPgsql = " AND (
-                requested_date IS NULL 
-                OR requested_date <= (CURRENT_TIMESTAMP - INTERVAL '180 seconds')
+            $timingFilterMysql = " AND (
+                `requested_date` IS NULL
+                OR (
+                    `telemetry_updated_at` IS NOT NULL
+                    AND `telemetry_updated_at` >= DATE_SUB(`requested_date`, INTERVAL 30 SECOND)
+                    AND `requested_date` <= DATE_SUB(NOW(), INTERVAL {$successWaitSec} SECOND)
+                )
+                OR (
+                    (`telemetry_updated_at` IS NULL OR `telemetry_updated_at` < DATE_SUB(`requested_date`, INTERVAL 30 SECOND))
+                    AND `requested_date` <= DATE_SUB(NOW(), INTERVAL {$retryWaitSec} SECOND)
+                )
             )";
-            if ($driver === 'sqlite') {
-                $timingFilterMysql = " AND (
-                    `requested_date` IS NULL 
-                    OR `requested_date` <= datetime('now', '-180 seconds')
-                )";
-            } else {
-                $timingFilterMysql = " AND (
-                    `requested_date` IS NULL 
-                    OR `requested_date` <= DATE_SUB(NOW(), INTERVAL 180 SECOND)
-                )";
-            }
         }
 
         $botFilterPgsql = "";
@@ -979,6 +1088,24 @@ SQL;
         };
 
         $maxFails = (int)$this->getSetting('max_telemetry_fails', 20);
+        $globalMinIntervalMins = (int)$this->getSetting('min_telemetry_interval_mins', 60);
+        $globalRetryIntervalMins = (int)$this->getSetting('min_retry_interval_mins', 60);
+        $botIntervals = [];
+        $botRetryIntervals = [];
+        try {
+            $bStmt = $this->pdo->query("SELECT bot_id, telemetry_interval_mins, retry_interval_mins FROM bots");
+            while ($bRow = $bStmt->fetch(PDO::FETCH_ASSOC)) {
+                if (!empty($bRow['bot_id'])) {
+                    $bKey = strtoupper(trim((string)$bRow['bot_id']));
+                    if (isset($bRow['telemetry_interval_mins']) && (int)$bRow['telemetry_interval_mins'] > 0) {
+                        $botIntervals[$bKey] = (int)$bRow['telemetry_interval_mins'];
+                    }
+                    if (isset($bRow['retry_interval_mins']) && (int)$bRow['retry_interval_mins'] > 0) {
+                        $botRetryIntervals[$bKey] = (int)$bRow['retry_interval_mins'];
+                    }
+                }
+            }
+        } catch (\Throwable $e) {}
 
         foreach ($rows as $row) {
             $nodeId = !empty($row['node_id']) 
@@ -1030,8 +1157,13 @@ SQL;
                 }
             }
 
-            $minIntervalMins = (int)$this->getSetting('min_telemetry_interval_mins', 60);
-            $requiredSec = $minIntervalMins * 60;
+            $botKey = strtoupper(trim($bot));
+            $minIntervalMins = $botIntervals[$botKey] ?? $globalMinIntervalMins;
+            $retryIntervalMins = $botRetryIntervals[$botKey] ?? $globalRetryIntervalMins;
+            $activeIntervalMins = ($attemptStatus === 'timeout') ? $retryIntervalMins : $minIntervalMins;
+            $requiredSec = ($attemptStatus === 'timeout')
+                ? (($retryIntervalMins > 0) ? max(180, $retryIntervalMins * 60) : 180)
+                : ($minIntervalMins * 60);
 
             $elapsedReqSec = ($rawReqDate !== null && trim((string)$rawReqDate) !== '') 
                 ? max(0, $now - strtotime($rawReqDate)) 
@@ -1042,7 +1174,7 @@ SQL;
             $isRetryCooldown = false;
             $retryRemainingMins = 0;
 
-            if ($minIntervalMins > 0 && $elapsedReqSec !== null && $elapsedReqSec < $requiredSec) {
+            if ($activeIntervalMins > 0 && $elapsedReqSec !== null && $elapsedReqSec < $requiredSec) {
                 $remainingMins = ceil(($requiredSec - $elapsedReqSec) / 60);
                 if ($attemptStatus === 'success') {
                     $isRateLimited = true;

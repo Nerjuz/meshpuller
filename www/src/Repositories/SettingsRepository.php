@@ -25,7 +25,7 @@ class SettingsRepository implements SettingsRepositoryInterface
         'max_telemetry_fails'                => 20,
         'auto_add_new_repeaters'             => false,
         'min_telemetry_interval_mins'        => 60,
-        'min_retry_interval_mins'            => 15,
+        'min_retry_interval_mins'            => 60,
         'telemetry_chart_days'               => 7,
         'max_telemetry_age_days'             => 0,
         'api_cache_ttl_mins'                 => 5,

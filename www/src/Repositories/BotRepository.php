@@ -49,7 +49,7 @@ class BotRepository implements BotRepositoryInterface
                 SUM(CASE WHEN NOT ({$disabledCond}) THEN 1 ELSE 0 END) AS active_nodes_count
             FROM bots b
             LEFT JOIN nodes n ON LOWER(b.bot_id) = LOWER(n.bot_id)
-            GROUP BY b.id, b.bot_id, b.name, b.public_key, b.enabled, b.latitude, b.longitude, b.description, b.last_seen_at, b.created_at, b.updated_at
+            GROUP BY b.id
             ORDER BY b.bot_id ASC
 SQL;
             $stmt = $this->pdo->query($sql);
@@ -114,14 +114,25 @@ SQL;
         $enabled = isset($data['enabled']) ? (!empty($data['enabled']) ? 1 : 0) : 1;
         $lat = (isset($data['latitude']) && $data['latitude'] !== '' && $data['latitude'] !== null) ? (float)$data['latitude'] : null;
         $lon = (isset($data['longitude']) && $data['longitude'] !== '' && $data['longitude'] !== null) ? (float)$data['longitude'] : null;
+        $intervalMins = (isset($data['telemetry_interval_mins']) && $data['telemetry_interval_mins'] !== '' && $data['telemetry_interval_mins'] !== null && (int)$data['telemetry_interval_mins'] > 0)
+            ? (int)$data['telemetry_interval_mins']
+            : null;
+        $retryIntervalMins = (isset($data['retry_interval_mins']) && $data['retry_interval_mins'] !== '' && $data['retry_interval_mins'] !== null && (int)$data['retry_interval_mins'] > 0)
+            ? (int)$data['retry_interval_mins']
+            : null;
+        $hourStart = (isset($data['active_hour_start']) && $data['active_hour_start'] !== '' && $data['active_hour_start'] !== null && is_numeric($data['active_hour_start']))
+            ? max(0, min(23, (int)$data['active_hour_start']))
+            : null;
+        $hourEnd = (isset($data['active_hour_end']) && $data['active_hour_end'] !== '' && $data['active_hour_end'] !== null && is_numeric($data['active_hour_end']))
+            ? max(0, min(23, (int)$data['active_hour_end']))
+            : null;
         $description = !empty($data['description']) ? trim((string)$data['description']) : null;
 
         $driver = $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
-        $enabledVal = ($driver === 'pgsql') ? ($enabled ? 'true' : 'false') : $enabled;
 
         $sql = <<<SQL
-        INSERT INTO bots (bot_id, name, public_key, enabled, latitude, longitude, description, created_at)
-        VALUES (:bot_id, :name, :public_key, :enabled, :latitude, :longitude, :description, CURRENT_TIMESTAMP)
+        INSERT INTO bots (bot_id, name, public_key, enabled, latitude, longitude, telemetry_interval_mins, retry_interval_mins, active_hour_start, active_hour_end, description, created_at)
+        VALUES (:bot_id, :name, :public_key, :enabled, :latitude, :longitude, :telemetry_interval_mins, :retry_interval_mins, :active_hour_start, :active_hour_end, :description, CURRENT_TIMESTAMP)
 SQL;
 
         try {
@@ -136,6 +147,10 @@ SQL;
             }
             $stmt->bindValue(':latitude', $lat);
             $stmt->bindValue(':longitude', $lon);
+            $stmt->bindValue(':telemetry_interval_mins', $intervalMins, $intervalMins === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
+            $stmt->bindValue(':retry_interval_mins', $retryIntervalMins, $retryIntervalMins === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
+            $stmt->bindValue(':active_hour_start', $hourStart, $hourStart === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
+            $stmt->bindValue(':active_hour_end', $hourEnd, $hourEnd === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
             $stmt->bindValue(':description', $description);
 
             return $stmt->execute();
@@ -195,6 +210,30 @@ SQL;
         if (array_key_exists('longitude', $data)) {
             $sets[] = "longitude = :longitude";
             $params[':longitude'] = ($data['longitude'] !== null && $data['longitude'] !== '') ? (float)$data['longitude'] : null;
+        }
+
+        if (array_key_exists('telemetry_interval_mins', $data)) {
+            $sets[] = "telemetry_interval_mins = :telemetry_interval_mins";
+            $val = $data['telemetry_interval_mins'];
+            $params[':telemetry_interval_mins'] = ($val !== null && $val !== '' && (int)$val > 0) ? (int)$val : null;
+        }
+
+        if (array_key_exists('retry_interval_mins', $data)) {
+            $sets[] = "retry_interval_mins = :retry_interval_mins";
+            $val = $data['retry_interval_mins'];
+            $params[':retry_interval_mins'] = ($val !== null && $val !== '' && (int)$val > 0) ? (int)$val : null;
+        }
+
+        if (array_key_exists('active_hour_start', $data)) {
+            $sets[] = "active_hour_start = :active_hour_start";
+            $val = $data['active_hour_start'];
+            $params[':active_hour_start'] = ($val !== null && $val !== '' && is_numeric($val)) ? max(0, min(23, (int)$val)) : null;
+        }
+
+        if (array_key_exists('active_hour_end', $data)) {
+            $sets[] = "active_hour_end = :active_hour_end";
+            $val = $data['active_hour_end'];
+            $params[':active_hour_end'] = ($val !== null && $val !== '' && is_numeric($val)) ? max(0, min(23, (int)$val)) : null;
         }
 
         if (array_key_exists('description', $data)) {

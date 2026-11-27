@@ -473,6 +473,10 @@ SQL;
                     enabled BOOLEAN NOT NULL DEFAULT true,
                     latitude NUMERIC(10, 7) NULL,
                     longitude NUMERIC(10, 7) NULL,
+                    telemetry_interval_mins INT NULL DEFAULT NULL,
+                    retry_interval_mins INT NULL DEFAULT NULL,
+                    active_hour_start SMALLINT NULL DEFAULT NULL,
+                    active_hour_end SMALLINT NULL DEFAULT NULL,
                     description TEXT NULL,
                     last_seen_at TIMESTAMP WITHOUT TIME ZONE NULL,
                     created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -483,6 +487,14 @@ SQL;
                 CREATE INDEX IF NOT EXISTS idx_bots_enabled ON bots (enabled);
 SQL;
                 $this->pdo->exec($botsSql);
+
+                // Migracija naujiems botų grafiko stulpeliams (PostgreSQL)
+                try {
+                    $this->pdo->exec("ALTER TABLE bots ADD COLUMN IF NOT EXISTS telemetry_interval_mins INT NULL DEFAULT NULL");
+                    $this->pdo->exec("ALTER TABLE bots ADD COLUMN IF NOT EXISTS retry_interval_mins INT NULL DEFAULT NULL");
+                    $this->pdo->exec("ALTER TABLE bots ADD COLUMN IF NOT EXISTS active_hour_start SMALLINT NULL DEFAULT NULL");
+                    $this->pdo->exec("ALTER TABLE bots ADD COLUMN IF NOT EXISTS active_hour_end SMALLINT NULL DEFAULT NULL");
+                } catch (\Throwable $e) {}
 
                 // Jei anksčiau buvo sukurtas stulpelis 'altitude', saugiai jį pašaliname
                 try {
@@ -507,23 +519,48 @@ SQL;
             } else {
                 $botsSql = <<<SQL
                 CREATE TABLE IF NOT EXISTS `bots` (
-                    `id`                BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-                    `bot_id`            VARCHAR(32) NOT NULL UNIQUE,
-                    `name`              VARCHAR(128) NULL DEFAULT NULL,
-                    `public_key`        VARCHAR(64) NULL DEFAULT NULL,
-                    `enabled`           TINYINT(1) NOT NULL DEFAULT 1,
-                    `latitude`          DECIMAL(10, 7) NULL DEFAULT NULL,
-                    `longitude`         DECIMAL(10, 7) NULL DEFAULT NULL,
-                    `description`       TEXT NULL DEFAULT NULL,
-                    `last_seen_at`      TIMESTAMP NULL DEFAULT NULL,
-                    `created_at`        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    `updated_at`        TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    `id`                      BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                    `bot_id`                  VARCHAR(32) NOT NULL UNIQUE,
+                    `name`                    VARCHAR(128) NULL DEFAULT NULL,
+                    `public_key`              VARCHAR(64) NULL DEFAULT NULL,
+                    `enabled`                 TINYINT(1) NOT NULL DEFAULT 1,
+                    `latitude`                DECIMAL(10, 7) NULL DEFAULT NULL,
+                    `longitude`               DECIMAL(10, 7) NULL DEFAULT NULL,
+                    `telemetry_interval_mins` INT NULL DEFAULT NULL,
+                    `retry_interval_mins`     INT NULL DEFAULT NULL,
+                    `active_hour_start`       TINYINT UNSIGNED NULL DEFAULT NULL,
+                    `active_hour_end`         TINYINT UNSIGNED NULL DEFAULT NULL,
+                    `description`             TEXT NULL DEFAULT NULL,
+                    `last_seen_at`            TIMESTAMP NULL DEFAULT NULL,
+                    `created_at`              TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    `updated_at`              TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                     INDEX `idx_bots_bot_id` (`bot_id`),
                     INDEX `idx_bots_public_key` (`public_key`),
                     INDEX `idx_bots_enabled` (`enabled`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 SQL;
                 $this->pdo->exec($botsSql);
+
+                // Migracija naujiems botų grafiko stulpeliams (MySQL)
+                try {
+                    $botCols = [];
+                    $bColStmt = $this->pdo->query("SHOW COLUMNS FROM `bots`");
+                    while ($bc = $bColStmt->fetch(\PDO::FETCH_ASSOC)) {
+                        $botCols[strtolower($bc['Field'] ?? '')] = true;
+                    }
+                    if (empty($botCols['telemetry_interval_mins'])) {
+                        $this->pdo->exec("ALTER TABLE `bots` ADD COLUMN `telemetry_interval_mins` INT NULL DEFAULT NULL AFTER `longitude`");
+                    }
+                    if (empty($botCols['retry_interval_mins'])) {
+                        $this->pdo->exec("ALTER TABLE `bots` ADD COLUMN `retry_interval_mins` INT NULL DEFAULT NULL AFTER `telemetry_interval_mins`");
+                    }
+                    if (empty($botCols['active_hour_start'])) {
+                        $this->pdo->exec("ALTER TABLE `bots` ADD COLUMN `active_hour_start` TINYINT UNSIGNED NULL DEFAULT NULL AFTER `retry_interval_mins`");
+                    }
+                    if (empty($botCols['active_hour_end'])) {
+                        $this->pdo->exec("ALTER TABLE `bots` ADD COLUMN `active_hour_end` TINYINT UNSIGNED NULL DEFAULT NULL AFTER `active_hour_start`");
+                    }
+                } catch (\Throwable $e) {}
 
                 // Jei anksčiau buvo sukurtas stulpelis 'altitude', saugiai jį pašaliname
                 try {

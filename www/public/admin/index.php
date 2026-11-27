@@ -965,6 +965,7 @@ $isLoggedIn = isAdminLoggedIn();
                                 <th>Pavadinimas (Name)</th>
                                 <th>Viešasis Raktas (Public Key)</th>
                                 <th>Būsena</th>
+                                <th>Apklausos Grafikas</th>
                                 <th>GPS Koordinatės</th>
                                 <th>Priskirti Mazgai</th>
                                 <th>Paskutinį kartą matytas (LT)</th>
@@ -972,7 +973,7 @@ $isLoggedIn = isAdminLoggedIn();
                             </tr>
                         </thead>
                         <tbody id="botsTableBody">
-                            <tr><td colspan="8" style="text-align: center; padding: 24px;">Kraunami botai...</td></tr>
+                            <tr><td colspan="9" style="text-align: center; padding: 24px;">Kraunami botai...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1573,18 +1574,35 @@ $isLoggedIn = isAdminLoggedIn();
                             <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap;">
                                 <div style="max-width: 580px;">
                                     <div style="font-size: 0.95rem; font-weight: 600; color: #ffffff;">
-                                        Minimalus telemetrijos atnaujinimo intervalas
+                                        Kreipimosi dėl telemetrijos intervalas (po sėkmingo gavimo)
                                     </div>
                                     <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">
-                                        Kas kiek laiko gali būti atnaujinami duomenys iš mazgo (galioja <code>/api/repeater</code> ir <code>/api/repyters</code>).
-                                        <br>Nustatytą laiką mazgas privalo laukti <b>tiek po sėkmingo atnaujinimo, tiek po nesėkmės (timeout)</b>, kad be reikalo neterštų LoRa radijo eterio.
-                                        <br>Pvz., jei nustatyta <b>60 min. (1h)</b>, neatsakęs mazgas taip pat nebus iškart statomas į eilę, o lauks 60 min. prieš kitą bandymą.
-                                        <br><span style="color: var(--accent-cyan);">Numatyta reikšmė: <b>60</b> min. Įveskite <b>0</b>, jei norite rotuoti mazgus be jokio minimalaus laiko tarpo.</span>
+                                        Kas kiek valandų gali būti vėl imama telemetrija iš mazgo, kai telemetrija buvo <b>sėkmingai gauta</b> (galioja <code>/api/repeater</code> ir <code>/api/repyters</code>, jei botui nenustatytas individualus intervalas).
+                                        <br><span style="color: var(--accent-cyan);">Numatyta reikšmė: <b>1</b> val. (galima įvesti pvz. <code>6</code>, <code>12</code>, <code>24</code> arba <code>0.5</code>). Įveskite <b>0</b>, jei norite rotuoti be laiko tarpo.</span>
                                     </div>
                                 </div>
                                 <div style="display: flex; align-items: center; gap: 8px;">
-                                    <input type="number" min="0" max="10080" step="1" id="settingMinTelemetryIntervalMins" class="form-control" style="width: 100px; font-weight: 700; text-align: center; font-size: 1rem;" placeholder="60" required>
-                                    <span style="font-size: 0.82rem; color: var(--text-muted);">min.</span>
+                                    <input type="number" min="0" max="720" step="any" id="settingMinTelemetryIntervalHours" class="form-control" style="width: 100px; font-weight: 700; text-align: center; font-size: 1rem;" placeholder="1" required>
+                                    <span style="font-size: 0.82rem; color: var(--text-muted);">val.</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 16px; margin-bottom: 20px;">
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap;">
+                                <div style="max-width: 580px;">
+                                    <div style="font-size: 0.95rem; font-weight: 600; color: #ffffff;">
+                                        Pakartotinio bandymo intervalas po nesėkmės (fail)
+                                    </div>
+                                    <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">
+                                        Po kiek valandų vėl bandyti pasiimti telemetriją iš mazgo, jei paskutinis bandymas buvo <b>nesėkmingas (timeout / fail)</b>.
+                                        <br>Kai po pakartotinio bandymo telemetrija sėkmingai gaunama, toliau mazgui vėl taikomas pagrindinis telemetrijos intervalas.
+                                        <br><span style="color: var(--accent-cyan);">Numatyta reikšmė: <b>1</b> val. (galima nustatyti ir kiekvienam botui individualiai).</span>
+                                    </div>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <input type="number" min="0.05" max="720" step="any" id="settingMinRetryIntervalHours" class="form-control" style="width: 100px; font-weight: 700; text-align: center; font-size: 1rem;" placeholder="1" required>
+                                    <span style="font-size: 0.82rem; color: var(--text-muted);">val.</span>
                                 </div>
                             </div>
                         </div>
@@ -1870,6 +1888,108 @@ $isLoggedIn = isAdminLoggedIn();
                                 <label for="editBotLon">GPS Ilguma (Longitude)</label>
                                 <input type="number" step="0.0000001" id="editBotLon" class="form-control" placeholder="pvz. 21.145874">
                             </div>
+                        </div>
+
+                        <div style="margin: 4px 0 14px 0; padding: 12px; background: rgba(162, 155, 254, 0.06); border: 1px solid rgba(162, 155, 254, 0.22); border-radius: var(--radius-md);">
+                            <div style="font-weight: 700; color: #a29bfe; font-size: 0.86rem; margin-bottom: 10px;">⏱️ Individualus Telemetrijos Apklausos Grafikas</div>
+
+                            <div class="form-group" style="margin-bottom: 12px;">
+                                <label for="editBotIntervalHours">Kreipimosi dėl telemetrijos intervalas (valandomis)</label>
+                                <input type="number" min="0" max="720" step="any" id="editBotIntervalHours" class="form-control" placeholder="Tuščia = naudoti bendrą sistemos intervalą">
+                                <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;">
+                                    <button type="button" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.72rem;" onclick="document.getElementById('editBotIntervalHours').value = ''">Globalus</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.72rem;" onclick="document.getElementById('editBotIntervalHours').value = '1'">Kas 1 val.</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.72rem;" onclick="document.getElementById('editBotIntervalHours').value = '3'">Kas 3 val.</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.72rem;" onclick="document.getElementById('editBotIntervalHours').value = '6'">Kas 6 val.</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.72rem;" onclick="document.getElementById('editBotIntervalHours').value = '12'">Kas 12 val.</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.72rem;" onclick="document.getElementById('editBotIntervalHours').value = '24'">Kas 24 val.</button>
+                                </div>
+                                <div style="font-size: 0.70rem; color: var(--text-dim); margin-top: 4px;">Taikoma po sėkmingai gautos telemetrijos. Pvz., <code>6</code> = kas 6 val., <code>12</code> = kas 12 val.</div>
+                            </div>
+
+                            <div class="form-group" style="margin-bottom: 12px;">
+                                <label for="editBotRetryIntervalHours">Pakartotinio bandymo intervalas po nesėkmės / fail (valandomis)</label>
+                                <input type="number" min="0" max="720" step="any" id="editBotRetryIntervalHours" class="form-control" placeholder="Tuščia = naudoti bendrą sistemos fail intervalą">
+                                <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;">
+                                    <button type="button" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.72rem;" onclick="document.getElementById('editBotRetryIntervalHours').value = ''">Globalus</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.72rem;" onclick="document.getElementById('editBotRetryIntervalHours').value = '0.5'">Po 0.5 val.</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.72rem;" onclick="document.getElementById('editBotRetryIntervalHours').value = '1'">Po 1 val.</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.72rem;" onclick="document.getElementById('editBotRetryIntervalHours').value = '2'">Po 2 val.</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.72rem;" onclick="document.getElementById('editBotRetryIntervalHours').value = '3'">Po 3 val.</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.72rem;" onclick="document.getElementById('editBotRetryIntervalHours').value = '6'">Po 6 val.</button>
+                                </div>
+                                <div style="font-size: 0.70rem; color: var(--text-dim); margin-top: 4px;">Po kiek valandų kartoti užklausą, jei mazgas neatsakė (gautas <code>fail</code>). Kai atsako – vėl galioja pagrindinis intervalas.</div>
+                            </div>
+
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                                <div class="form-group" style="margin-bottom: 4px;">
+                                    <label for="editBotHourStart">Darbo laikas NUO (valanda, LT)</label>
+                                    <select id="editBotHourStart" class="form-control">
+                                        <option value="">Visą parą (24/7)</option>
+                                        <option value="0">00:00 (0h)</option>
+                                        <option value="1">01:00 (1h)</option>
+                                        <option value="2">02:00 (2h)</option>
+                                        <option value="3">03:00 (3h)</option>
+                                        <option value="4">04:00 (4h)</option>
+                                        <option value="5">05:00 (5h)</option>
+                                        <option value="6">06:00 (6h)</option>
+                                        <option value="7">07:00 (7h)</option>
+                                        <option value="8">08:00 (8h)</option>
+                                        <option value="9">09:00 (9h)</option>
+                                        <option value="10">10:00 (10h)</option>
+                                        <option value="11">11:00 (11h)</option>
+                                        <option value="12">12:00 (12h)</option>
+                                        <option value="13">13:00 (13h)</option>
+                                        <option value="14">14:00 (14h)</option>
+                                        <option value="15">15:00 (15h)</option>
+                                        <option value="16">16:00 (16h)</option>
+                                        <option value="17">17:00 (17h)</option>
+                                        <option value="18">18:00 (18h)</option>
+                                        <option value="19">19:00 (19h)</option>
+                                        <option value="20">20:00 (20h)</option>
+                                        <option value="21">21:00 (21h)</option>
+                                        <option value="22">22:00 (22h)</option>
+                                        <option value="23">23:00 (23h)</option>
+                                    </select>
+                                </div>
+                                <div class="form-group" style="margin-bottom: 4px;">
+                                    <label for="editBotHourEnd">Darbo laikas IKI (valanda, LT)</label>
+                                    <select id="editBotHourEnd" class="form-control">
+                                        <option value="">Visą parą (24/7)</option>
+                                        <option value="0">00:00 (0h)</option>
+                                        <option value="1">01:00 (1h)</option>
+                                        <option value="2">02:00 (2h)</option>
+                                        <option value="3">03:00 (3h)</option>
+                                        <option value="4">04:00 (4h)</option>
+                                        <option value="5">05:00 (5h)</option>
+                                        <option value="6">06:00 (6h)</option>
+                                        <option value="7">07:00 (7h)</option>
+                                        <option value="8">08:00 (8h)</option>
+                                        <option value="9">09:00 (9h)</option>
+                                        <option value="10">10:00 (10h)</option>
+                                        <option value="11">11:00 (11h)</option>
+                                        <option value="12">12:00 (12h)</option>
+                                        <option value="13">13:00 (13h)</option>
+                                        <option value="14">14:00 (14h)</option>
+                                        <option value="15">15:00 (15h)</option>
+                                        <option value="16">16:00 (16h)</option>
+                                        <option value="17">17:00 (17h)</option>
+                                        <option value="18">18:00 (18h)</option>
+                                        <option value="19">19:00 (19h)</option>
+                                        <option value="20">20:00 (20h)</option>
+                                        <option value="21">21:00 (21h)</option>
+                                        <option value="22">22:00 (22h)</option>
+                                        <option value="23">23:00 (23h)</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;">
+                                <button type="button" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.72rem;" onclick="document.getElementById('editBotHourStart').value=''; document.getElementById('editBotHourEnd').value='';">🟢 Visą parą (24/7)</button>
+                                <button type="button" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.72rem;" onclick="document.getElementById('editBotHourStart').value='23'; document.getElementById('editBotHourEnd').value='6';">🌙 23:00 – 06:00</button>
+                                <button type="button" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.72rem;" onclick="document.getElementById('editBotHourStart').value='1'; document.getElementById('editBotHourEnd').value='5';">🌙 01:00 – 05:00</button>
+                                <button type="button" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.72rem;" onclick="document.getElementById('editBotHourStart').value='0'; document.getElementById('editBotHourEnd').value='6';">🌙 00:00 – 06:00</button>
+                            </div>
+                            <div style="font-size: 0.70rem; color: var(--text-dim); margin-top: 4px;">Palaiko ir perėjimą per vidurnaktį (pvz. nuo <code>23:00</code> iki <code>06:00</code>). Ne darbo valandomis šiam botui per <code>/api/repeater</code> kartotuvai nebus duodami.</div>
                         </div>
 
                         <div class="form-group">
@@ -3057,18 +3177,57 @@ $isLoggedIn = isAdminLoggedIn();
             }
 
             if (filtered.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 28px; color: var(--text-muted);">
+                tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; padding: 28px; color: var(--text-muted);">
                     Botų nerasta pagal pasirinktus paieškos kriterijus.
                 </td></tr>`;
                 return;
             }
 
             let html = '';
+            const currentLtHour = parseInt(new Intl.DateTimeFormat('en-GB', { hour: '2-digit', hour12: false, timeZone: 'Europe/Vilnius' }).format(new Date()), 10);
+
             filtered.forEach(bot => {
                 const isEnabled = (bot.enabled == 1 || bot.enabled === true);
                 const statusBadge = isEnabled
                     ? `<span class="badge badge-green" style="cursor: pointer;" onclick="quickToggleBot('${escapeHtml(bot.bot_id)}', false)" title="Paspauskite, kad išjungtumėte">● Aktyvus</span>`
                     : `<span class="badge badge-red" style="cursor: pointer;" onclick="quickToggleBot('${escapeHtml(bot.bot_id)}', true)" title="Paspauskite, kad įjungtumėte">○ Išjungtas</span>`;
+
+                const intMins = (bot.telemetry_interval_mins !== null && bot.telemetry_interval_mins !== undefined && parseInt(bot.telemetry_interval_mins, 10) > 0)
+                    ? parseInt(bot.telemetry_interval_mins, 10)
+                    : null;
+                let intervalText = '<span style="color: var(--text-dim);">⏱️ Globalus</span>';
+                if (intMins !== null) {
+                    const hrs = Number((intMins / 60).toFixed(2));
+                    intervalText = `<span class="badge badge-purple" title="Individualus telemetrijos intervalas: ${hrs} val.">⏱️ Kas ${hrs} val.</span>`;
+                }
+
+                const retryMins = (bot.retry_interval_mins !== null && bot.retry_interval_mins !== undefined && parseInt(bot.retry_interval_mins, 10) > 0)
+                    ? parseInt(bot.retry_interval_mins, 10)
+                    : null;
+                let retryText = '<span style="color: var(--text-dim); font-size: 0.74rem; margin-left: 6px;" title="Naudojamas bendras sistemos pakartotinio bandymo po fail intervalas">🔄 Fail: globalus</span>';
+                if (retryMins !== null) {
+                    const rHrs = Number((retryMins / 60).toFixed(2));
+                    retryText = `<span class="badge badge-amber" style="margin-left: 4px;" title="Pakartotinis bandymas po nesėkmės (fail): po ${rHrs} val.">🔄 Fail: po ${rHrs} val.</span>`;
+                }
+
+                const hStart = (bot.active_hour_start !== null && bot.active_hour_start !== undefined && bot.active_hour_start !== '')
+                    ? parseInt(bot.active_hour_start, 10)
+                    : null;
+                const hEnd = (bot.active_hour_end !== null && bot.active_hour_end !== undefined && bot.active_hour_end !== '')
+                    ? parseInt(bot.active_hour_end, 10)
+                    : null;
+                let hoursText = '<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">🟢 24/7 (Visą parą)</div>';
+                if (hStart !== null && hEnd !== null && hStart !== hEnd) {
+                    const padH = (h) => String(h).padStart(2, '0') + ':00';
+                    const inWin = (hStart < hEnd)
+                        ? (currentLtHour >= hStart && currentLtHour < hEnd)
+                        : (currentLtHour >= hStart || currentLtHour < hEnd);
+                    const winIcon = inWin ? '🟢' : '🌙';
+                    const winColor = inWin ? '#2ed573' : '#ffa502';
+                    const winState = inWin ? 'Dabar dirba' : 'Laukia lango';
+                    hoursText = `<div style="font-size: 0.76rem; color: ${winColor}; margin-top: 4px; font-family: var(--font-mono);" title="${winState} (dabartinė valanda: ${padH(currentLtHour)})">${winIcon} ${padH(hStart)} – ${padH(hEnd)}</div>`;
+                }
+                const scheduleHtml = `<div><div>${intervalText}${retryText}</div>${hoursText}</div>`;
 
                 let coordsHtml = '<span style="color: var(--text-dim); font-size: 0.8rem;">Nenurodytos</span>';
                 if (bot.latitude && bot.longitude) {
@@ -3104,6 +3263,7 @@ $isLoggedIn = isAdminLoggedIn();
                     </td>
                     <td>${pkHtml}</td>
                     <td>${statusBadge}</td>
+                    <td>${scheduleHtml}</td>
                     <td>${coordsHtml}</td>
                     <td>${nodesBadge}</td>
                     <td>${lastSeen}</td>
@@ -3135,6 +3295,10 @@ $isLoggedIn = isAdminLoggedIn();
             document.getElementById('editBotPublicKey').value = '';
             document.getElementById('editBotLat').value = '';
             document.getElementById('editBotLon').value = '';
+            document.getElementById('editBotIntervalHours').value = '';
+            document.getElementById('editBotRetryIntervalHours').value = '';
+            document.getElementById('editBotHourStart').value = '';
+            document.getElementById('editBotHourEnd').value = '';
             document.getElementById('editBotDescription').value = '';
             document.getElementById('editBotEnabled').checked = true;
 
@@ -3159,6 +3323,16 @@ $isLoggedIn = isAdminLoggedIn();
             document.getElementById('editBotPublicKey').value = bot.public_key || '';
             document.getElementById('editBotLat').value = bot.latitude || '';
             document.getElementById('editBotLon').value = bot.longitude || '';
+            const botIntMins = (bot.telemetry_interval_mins !== null && bot.telemetry_interval_mins !== undefined && parseInt(bot.telemetry_interval_mins, 10) > 0)
+                ? parseInt(bot.telemetry_interval_mins, 10)
+                : null;
+            document.getElementById('editBotIntervalHours').value = botIntMins !== null ? Number((botIntMins / 60).toFixed(2)) : '';
+            const botRetryMins = (bot.retry_interval_mins !== null && bot.retry_interval_mins !== undefined && parseInt(bot.retry_interval_mins, 10) > 0)
+                ? parseInt(bot.retry_interval_mins, 10)
+                : null;
+            document.getElementById('editBotRetryIntervalHours').value = botRetryMins !== null ? Number((botRetryMins / 60).toFixed(2)) : '';
+            document.getElementById('editBotHourStart').value = (bot.active_hour_start !== null && bot.active_hour_start !== undefined && bot.active_hour_start !== '') ? String(bot.active_hour_start) : '';
+            document.getElementById('editBotHourEnd').value = (bot.active_hour_end !== null && bot.active_hour_end !== undefined && bot.active_hour_end !== '') ? String(bot.active_hour_end) : '';
             document.getElementById('editBotDescription').value = bot.description || '';
             document.getElementById('editBotEnabled').checked = (bot.enabled == 1 || bot.enabled === true);
 
@@ -3175,11 +3349,22 @@ $isLoggedIn = isAdminLoggedIn();
             const publicKey = document.getElementById('editBotPublicKey').value.trim();
             const lat = document.getElementById('editBotLat').value;
             const lon = document.getElementById('editBotLon').value;
+            const intervalHoursRaw = document.getElementById('editBotIntervalHours').value;
+            const intervalHoursVal = intervalHoursRaw !== '' ? parseFloat(intervalHoursRaw) : NaN;
+            const retryHoursRaw = document.getElementById('editBotRetryIntervalHours').value;
+            const retryHoursVal = retryHoursRaw !== '' ? parseFloat(retryHoursRaw) : NaN;
+            const hourStartRaw = document.getElementById('editBotHourStart').value;
+            const hourEndRaw = document.getElementById('editBotHourEnd').value;
             const description = document.getElementById('editBotDescription').value.trim();
             const enabled = document.getElementById('editBotEnabled').checked;
 
             if (!botId) {
                 showToast('Privaloma įvesti Boto ID!', 'error');
+                return;
+            }
+
+            if ((hourStartRaw !== '' && hourEndRaw === '') || (hourStartRaw === '' && hourEndRaw !== '')) {
+                showToast('Pasirinkite abi darbo valandas (NUO ir IKI) arba abi palikite „Visą parą (24/7)“!', 'error');
                 return;
             }
 
@@ -3191,6 +3376,10 @@ $isLoggedIn = isAdminLoggedIn();
                 public_key: publicKey,
                 latitude: lat ? parseFloat(lat) : null,
                 longitude: lon ? parseFloat(lon) : null,
+                telemetry_interval_mins: (!isNaN(intervalHoursVal) && intervalHoursVal > 0) ? Math.round(intervalHoursVal * 60) : null,
+                retry_interval_mins: (!isNaN(retryHoursVal) && retryHoursVal > 0) ? Math.round(retryHoursVal * 60) : null,
+                active_hour_start: hourStartRaw !== '' ? parseInt(hourStartRaw, 10) : null,
+                active_hour_end: hourEndRaw !== '' ? parseInt(hourEndRaw, 10) : null,
                 description: description,
                 enabled: enabled
             };
@@ -4613,8 +4802,8 @@ $isLoggedIn = isAdminLoggedIn();
                 const lonMinEl = document.getElementById('settingLtLonMin');
                 const lonMaxEl = document.getElementById('settingLtLonMax');
                 const maxFailsEl = document.getElementById('settingMaxTelemetryFails');
-                const minIntervalEl = document.getElementById('settingMinTelemetryIntervalMins');
-                const minRetryIntervalEl = document.getElementById('settingMinRetryIntervalMins');
+                const minIntervalEl = document.getElementById('settingMinTelemetryIntervalHours');
+                const minRetryIntervalEl = document.getElementById('settingMinRetryIntervalHours');
                 const chartDaysEl = document.getElementById('settingTelemetryChartDays');
                 const maxTelemAgeDaysEl = document.getElementById('settingMaxTelemetryAgeDays');
 
@@ -4625,8 +4814,8 @@ $isLoggedIn = isAdminLoggedIn();
                 if (lonMinEl) lonMinEl.value = currentSettings.lithuania_lon_min ?? 20.9000;
                 if (lonMaxEl) lonMaxEl.value = currentSettings.lithuania_lon_max ?? 26.8500;
                 if (maxFailsEl) maxFailsEl.value = currentSettings.max_telemetry_fails ?? 20;
-                if (minIntervalEl) minIntervalEl.value = currentSettings.min_telemetry_interval_mins ?? 60;
-                if (minRetryIntervalEl) minRetryIntervalEl.value = currentSettings.min_retry_interval_mins ?? 15;
+                if (minIntervalEl) minIntervalEl.value = Number(((currentSettings.min_telemetry_interval_mins ?? 60) / 60).toFixed(2));
+                if (minRetryIntervalEl) minRetryIntervalEl.value = Number(((currentSettings.min_retry_interval_mins ?? 60) / 60).toFixed(2));
                 if (chartDaysEl) chartDaysEl.value = currentSettings.telemetry_chart_days ?? 7;
                 if (maxTelemAgeDaysEl) maxTelemAgeDaysEl.value = currentSettings.max_telemetry_age_days ?? 0;
 
@@ -4707,8 +4896,8 @@ $isLoggedIn = isAdminLoggedIn();
                     lithuania_lon_min: parseFloat(document.getElementById('settingLtLonMin').value),
                     lithuania_lon_max: parseFloat(document.getElementById('settingLtLonMax').value),
                     max_telemetry_fails: parseInt(document.getElementById('settingMaxTelemetryFails')?.value || '20', 10),
-                    min_telemetry_interval_mins: parseInt(document.getElementById('settingMinTelemetryIntervalMins')?.value || '60', 10),
-                    min_retry_interval_mins: parseInt(document.getElementById('settingMinRetryIntervalMins')?.value || '15', 10),
+                    min_telemetry_interval_mins: Math.max(0, Math.round(parseFloat(document.getElementById('settingMinTelemetryIntervalHours')?.value || '1') * 60)),
+                    min_retry_interval_mins: Math.max(1, Math.round(parseFloat(document.getElementById('settingMinRetryIntervalHours')?.value || '1') * 60)),
                     telemetry_chart_days: parseInt(document.getElementById('settingTelemetryChartDays')?.value || '7', 10),
                     max_telemetry_age_days: parseInt(document.getElementById('settingMaxTelemetryAgeDays')?.value || '0', 10),
                     api_cache_ttl_mins: parseInt(document.getElementById('settingApiCacheTtlMins')?.value || '5', 10),

@@ -462,12 +462,16 @@ if ($action === 'save_bot') {
         if (!$isNew && $existing) {
             // Atnaujinimas (Update)
             $updateData = [
-                'name'        => $data['name'] ?? null,
-                'public_key'  => $data['public_key'] ?? null,
-                'enabled'     => isset($data['enabled']) ? (bool)$data['enabled'] : true,
-                'latitude'    => $data['latitude'] ?? null,
-                'longitude'   => $data['longitude'] ?? null,
-                'description' => $data['description'] ?? null,
+                'name'                    => $data['name'] ?? null,
+                'public_key'              => $data['public_key'] ?? null,
+                'enabled'                 => isset($data['enabled']) ? (bool)$data['enabled'] : true,
+                'latitude'                => $data['latitude'] ?? null,
+                'longitude'               => $data['longitude'] ?? null,
+                'telemetry_interval_mins' => $data['telemetry_interval_mins'] ?? null,
+                'retry_interval_mins'     => $data['retry_interval_mins'] ?? null,
+                'active_hour_start'       => $data['active_hour_start'] ?? null,
+                'active_hour_end'         => $data['active_hour_end'] ?? null,
+                'description'             => $data['description'] ?? null,
             ];
             if ($botId !== $originalBotId) {
                 $updateData['new_bot_id'] = $botId;
@@ -488,13 +492,17 @@ if ($action === 'save_bot') {
         } else {
             // Sukūrimas (Create)
             $createData = [
-                'bot_id'      => $botId,
-                'name'        => !empty($data['name']) ? $data['name'] : "Botas {$botId}",
-                'public_key'  => $data['public_key'] ?? null,
-                'enabled'     => isset($data['enabled']) ? (bool)$data['enabled'] : true,
-                'latitude'    => $data['latitude'] ?? null,
-                'longitude'   => $data['longitude'] ?? null,
-                'description' => $data['description'] ?? null,
+                'bot_id'                  => $botId,
+                'name'                    => !empty($data['name']) ? $data['name'] : "Botas {$botId}",
+                'public_key'              => $data['public_key'] ?? null,
+                'enabled'                 => isset($data['enabled']) ? (bool)$data['enabled'] : true,
+                'latitude'                => $data['latitude'] ?? null,
+                'longitude'               => $data['longitude'] ?? null,
+                'telemetry_interval_mins' => $data['telemetry_interval_mins'] ?? null,
+                'retry_interval_mins'     => $data['retry_interval_mins'] ?? null,
+                'active_hour_start'       => $data['active_hour_start'] ?? null,
+                'active_hour_end'         => $data['active_hour_end'] ?? null,
+                'description'             => $data['description'] ?? null,
             ];
 
             $ok = $repository->createBot($createData);
